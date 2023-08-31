@@ -193,8 +193,9 @@ spec:
           {%- endfor %}
         matchActions:
         - action: Sigkill
-  # matchLabels:
-  #   app.kubernetes.io/instance: {{ wl }}
+  #podSelector:
+  #  matchLabels:
+  #    app.kubernetes.io/instance: {{ wl }}
   # /!\ manual validation needed here ^
   {%- endfor %}
 {%- endfor %}
