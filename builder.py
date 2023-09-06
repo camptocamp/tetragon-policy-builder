@@ -220,8 +220,7 @@ def main():
   analyzer = Analyzer()
   events = []
 
-  # on_exit handler
-  def signal_handler(sig, frame):
+  def write_policies():
     if args.output:
       with open(args.output, 'w', encoding='utf-8') as f:
         print("writing to file: ", args.output)
@@ -232,6 +231,10 @@ def main():
     print("# events parsed")
     for e in events:
       print("#", e)
+
+  # on_exit handler
+  def signal_handler(sig, frame):
+    write_policies()
     #analyzer.print_stats()
     sys.exit(0)
 
@@ -264,6 +267,9 @@ def main():
         print(f"Couldn't parse data from line {line}.")
       if e not in events:
         events.append(e)
+
+  # Dump results to file at the end
+  write_policies()
 
 
 if __name__ == "__main__":
