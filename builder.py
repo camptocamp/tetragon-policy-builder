@@ -167,7 +167,7 @@ def export_policy(events: list[EventProcessExec]) -> str:
   {%- for wl, bins in workloads.items() %}
 ---
 apiVersion: cilium.io/v1alpha1
-kind: TracingPolicy
+kind: TracingPolicyNamespaced
 metadata:
   name: "policy-{{ wl }}-whitelist"
   namespace: "{{ ns }}"
