@@ -5,6 +5,9 @@ import json
 import jinja2
 import argparse
 from collections import defaultdict
+from kubernetes import client, config
+from kubernetes.client.exceptions import ApiException
+from pprint import pprint
 
 def parse_lines_eol_terminator(filename):
   """
@@ -53,7 +56,7 @@ def parse_lines_braces_terminator(filename):
           yield None
         buffer = []
 
-def extract_workload_prefix(s):
+def extract_workload_prefix(ns, s):
   """Returns workload id as:
 
   Assumes pattern
@@ -100,12 +103,57 @@ class EventProcessExec:
   def __hash__(self):
     return hash(str(f"{repr(self)}"))
 
+class EventProcessExit(EventProcessExec):
+  pass
+
+class PodNotfound(Exception):
+  pass
+
 class Analyzer:
 
   def __init__(self):
     self.event_counter = dict()
     self.ns_ls = []
     self.ps_ls = []
+    self.pod_to_workload = dict()
+
+    # Load K8S configuration
+    config.load_kube_config()
+    self.v1 = client.CoreV1Api()
+    self.appsv1 = client.AppsV1Api()
+
+  def getWorkload(self, ns, pod_id):
+    if pod_id in self.pod_to_workload:
+      return self.pod_to_workload[pod_id]
+    else:
+      # Retrieve Pod owner
+      try:
+        owner = self.getPodOwner(ns, pod_id)
+        print(owner)
+        if owner[1] == 'ReplicaSet':
+          return self.getRSOwner(ns, owner[2])
+      except PodNotfound as e:
+        # fallback to pod name parsing
+        return extract_workload_prefix(ns, pod_id)
+
+  def getPodOwner(self, ns, pod_name):
+    try:
+      api_response = self.v1.read_namespaced_pod(pod_name, ns, pretty=True)
+      pprint(api_response)
+      owner = api_response.metadata.owner_references[0]
+      return (ns, owner.kind, owner.name)
+    except ApiException as e:
+      if e.reason == 'Not Found':
+        raise PodNotfound()
+
+  def getRSOwner(self, ns, rs_name):
+    try:
+      api_response = self.appsv1.read_namespaced_replica_set(rs_name, ns, pretty=True)
+      pprint(api_response)
+      owner = api_response.metadata.owner_references[0]
+      return (ns, owner.kind, owner.name)
+    except ApiException as e:
+        print("Exception when calling AppsV1Api->read_namespaced_replica_set: %s\n" % e)
 
   def count(self, e:EventProcessExec):
     if e in self.event_counter:
@@ -121,14 +169,16 @@ class Analyzer:
            ns  = d["process_exec"]["process"]["pod"]["namespace"],
            ctr = d["process_exec"]["process"]["pod"]["container"]["name"],
            bin = d["process_exec"]["process"]["binary"],
-           wl  = extract_workload_prefix(d["process_exec"]["process"]["pod"]["name"]),
+           wl  = self.getWorkload(d["process_exec"]["process"]["pod"]["namespace"],
+                                  d["process_exec"]["process"]["pod"]["name"]),
         )
       elif "process_exit" in d:
         e = EventProcessExit(
            ns  = d["process_exit"]["process"]["pod"]["namespace"],
            ctr = d["process_exit"]["process"]["pod"]["container"]["name"],
            bin = d["process_exit"]["process"]["binary"],
-           wl  = extract_workload_prefix(d["process_exit"]["process"]["pod"]["name"]),
+           wl  = self.getWorkload(d["process_exit"]["process"]["pod"]["namespace"],
+                                  d["process_exit"]["process"]["pod"]["name"]),
         )
 
       else:
@@ -139,9 +189,6 @@ class Analyzer:
 
   def print_stats(self):
     print(self.event_counter)
-
-class EventProcessExit(EventProcessExec):
-  pass
 
 def export_policy(events: list[EventProcessExec]) -> str:
   """
@@ -158,7 +205,7 @@ def export_policy(events: list[EventProcessExec]) -> str:
   # events in graph
   graph = defaultdict(lambda: defaultdict(set))
   for item in events:
-    graph[item.ns][item.wl].add(item.bin)\
+    graph[item.ns]["%s-%s" % (item.wl[1], item.wl[2])].add(item.bin)\
 
   # policy template
   template_string = """
