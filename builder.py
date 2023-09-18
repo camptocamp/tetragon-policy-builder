@@ -401,6 +401,10 @@ bg_analyzer.start()
 def home():
   return render_template('index.html', analyzers=analyzers)
 
+@app.route("/health")
+def health():
+  return "OK"
+
 @app.route('/remove_binary', methods=['POST'])
 def remove_binary():
   ns = request.form.get('ns')
@@ -423,4 +427,4 @@ def remove_policy():
   analyzers[ns].deletePolicy(wl)
   return redirect(url_for('home'))
 
-app.run()
+app.run(host="0.0.0.0", port=5000)
