@@ -280,24 +280,6 @@ class BackgroundFetchEvent(Thread):
       self.queue.put(line.decode('utf-8'))
 
 
-def parse_event(raw_event):
-
-    e = json.loads(raw_event)
-    # Extract event type
-    eventType = list(e.keys())
-    eventType.remove('node_name')
-    eventType.remove('time')
-    eventType = eventType[0]
-
-    # Only use process_exec events
-    if eventType != "process_exec":
-      return None
-
-    # Extract metadata
-    ns = e[eventType]["process"]["pod"]["namespace"]
-    pod = e[eventType]["process"]["pod"]["name"]
-    bin = e[eventType]["process"]["binary"]
-    return (ns, pod, bin)
 
 class BackgroundFlush(Thread):
 
@@ -312,52 +294,93 @@ class BackgroundFlush(Thread):
         if analyzer.modificationCount() > 0:
           analyzer.flush()
 
+class BackgroundAnalyser(Thread):
 
-def main():
+  def __init__(self, analyzers, queue):
+    self.analyzers = analyzers
+    self.queue = queue
+    super().__init__()
 
-  # Read pod selector to find tetragon pods
-  tetragon_pod_selector = os.environ.get("TETRAGON_POD_SELECTOR", "app.kubernetes.io/instance=tetragon,app.kubernetes.io/name=tetragon")
+  def run(self):
+    # read message from the queue
+    while True:
+      #print("Waiting for message")
+      msg = self.queue.get(block=True)
 
-  # Load K8S configuration
-  config.load_kube_config()
+      #print("Process one message")
+      # Parse event
+      event = self.parseEvent(msg)
+      if event:
+        if event[0] not in self.analyzers:
+          self.analyzers[event[0]] = NamespaceAnalyser(event[0])
+        self.analyzers[event[0]].process(event)
+        if self.analyzers[event[0]].modificationCount() > 10:
+          self.analyzers[event[0]].flush()
 
-  # Load Flask App
-  app = Flask(__name__)
+  def parseEvent(self, raw_event):
 
-  # states
-  analyzers = dict()
-  events = []
-  queue = SimpleQueue()
+      e = json.loads(raw_event)
+      # Extract event type
+      eventType = list(e.keys())
+      eventType.remove('node_name')
+      eventType.remove('time')
+      eventType = eventType[0]
 
-  # read from pods logs
-  v1 = client.CoreV1Api()
+      # Only use process_exec events
+      if eventType != "process_exec":
+        return None
 
-  # Search for tetragon pods
-  pod_list = v1.list_pod_for_all_namespaces(pretty=True, label_selector=tetragon_pod_selector)
+      # Extract metadata
+      ns = e[eventType]["process"]["pod"]["namespace"]
+      pod = e[eventType]["process"]["pod"]["name"]
+      bin = e[eventType]["process"]["binary"]
+      return (ns, pod, bin)
 
-  for pod in pod_list.items:
-    t = BackgroundFetchEvent(pod, queue)
-    t.start()
+# Read pod selector to find tetragon pods
+tetragon_pod_selector = os.environ.get("TETRAGON_POD_SELECTOR", "app.kubernetes.io/instance=tetragon,app.kubernetes.io/name=tetragon")
 
-  bg_sync = BackgroundFlush(analyzers)
-  bg_sync.start()
+# Load K8S configuration
+config.load_kube_config()
 
-  # read message from the queue
-  msg = None
-  while True:
-    #print("Waiting for message")
-    msg = queue.get(block=True)
+# Load Flask App
+app = Flask(__name__)
 
-    #print("Process one message")
-    # Parse event
-    event = parse_event(msg)
-    if event:
-      if event[0] not in analyzers:
-        analyzers[event[0]] = NamespaceAnalyser(event[0])
-      analyzers[event[0]].process(event)
-      if analyzers[event[0]].modificationCount() > 10:
-        analyzers[event[0]].flush()
+# states
+analyzers = dict()
+events = []
+queue = SimpleQueue()
 
+# read from pods logs
+v1 = client.CoreV1Api()
 
-if __name__ == "__main__":
-  main()
+# Search for tetragon pods
+pod_list = v1.list_pod_for_all_namespaces(pretty=True, label_selector=tetragon_pod_selector)
+
+# Starts thread to fetch log from pods
+for pod in pod_list.items:
+  t = BackgroundFetchEvent(pod, queue)
+  t.start()
+
+# Start the process to store data in configmaps
+bg_sync = BackgroundFlush(analyzers)
+bg_sync.start()
+
+# Start the process to consume pod logs
+bg_analyzer = BackgroundAnalyser(analyzers, queue)
+bg_analyzer.start()
+
+@app.route("/")
+def home():
+  res = ""
+  for ns, analyser in analyzers.items():
+    res += "<h1>Namespace: %s</h1>\n" % ns
+    for wl, binaries in analyser.binaries.getDict().items():
+      res += "<h2>Workload: %s</h2>\n" % wl
+      res += "<ul>\n"
+      for binary in binaries:
+        res += "\t<li>%s</li>\n" % binary
+      res += "</ul>\n"
+
+  return res
+
+app.run()
