@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block header %}{% endblock %}
+
+{% block content %}
+
+{% for ns, analyser in analyzers.items() %}
+<h1>Namespace: {{ ns }}</h1>
+{% for wl, binaries in analyser.binaries.getDict().items() %}
+  <h2>Workload: {{ wl }}</h2>
+    <ul>
+      {% for binary in binaries %}
+      <li>
+        <i class="fa-solid fa-trash-can fs-6 mx-2 image-drop"
+           data-ns="{{ ns }}"
+           data-wl="{{ wl }}"
+           data-binary="{{ binary }}"></i>
+        <div class="loader"></div>
+        {{ binary }}
+      </li>
+      {% endfor %}
+    </ul>
+
+{% endfor %}
+{% endfor %}
+{% endblock %}
+
+{% block script %}
+  $(".image-drop").on("click", function () {
+      var image = $(this);
+      var loader = image.next(".loader");
+      image.hide();
+      loader.css('display', 'inline-block');
+      var ns = $(this).data("ns");
+      var wl = $(this).data("wl");
+      var binary = $(this).data("binary");
+      $.ajax({
+          type: "POST",
+          url: "{{ url_for('remove_binary') }}",
+          data: { ns: ns, wl: wl, binary: binary },
+          success: function (response) {
+              console.log("Response:", response);
+              window.location.reload();
+          },
+          error: function (error) {
+              console.error("Error:", error);
+          }
+      });
+  });
+{% endblock %}

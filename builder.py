@@ -13,7 +13,9 @@ from kubernetes.client.exceptions import ApiException
 from pprint import pprint
 from queue import SimpleQueue, Empty
 from threading import Thread, current_thread, Lock
-from flask import Flask
+from flask import Flask, render_template, request, url_for, redirect
+from flask_bootstrap import Bootstrap5
+from flask_moment import Moment
 
 class BufferedDictSet():
 
@@ -165,6 +167,13 @@ class NamespaceAnalyser:
 
     with self.lock:
       self.binaries.add("%s-%s" % (wl[0], wl[1]), event[2])
+
+  def forgot(self, wl, binary):
+    if wl in self.binaries.written and binary in self.binaries.written[wl]:
+      self.binaries.written[wl].discard(binary)
+      self.flush()
+    else:
+      self.binaries.to_write[wl].discard(binary)
 
   def flush(self):
      print("Flushing binaries for %s" % self.ns, file=sys.stderr)
@@ -344,6 +353,8 @@ config.load_kube_config()
 
 # Load Flask App
 app = Flask(__name__)
+Bootstrap5(app)
+Moment(app)
 
 # states
 analyzers = dict()
@@ -371,16 +382,14 @@ bg_analyzer.start()
 
 @app.route("/")
 def home():
-  res = ""
-  for ns, analyser in analyzers.items():
-    res += "<h1>Namespace: %s</h1>\n" % ns
-    for wl, binaries in analyser.binaries.getDict().items():
-      res += "<h2>Workload: %s</h2>\n" % wl
-      res += "<ul>\n"
-      for binary in binaries:
-        res += "\t<li>%s</li>\n" % binary
-      res += "</ul>\n"
+  return render_template('index.html', analyzers=analyzers)
 
-  return res
+@app.route('/remove_binary', methods=['POST'])
+def remove_binary():
+  ns = request.form.get('ns')
+  wl = request.form.get('wl')
+  binary = request.form.get('binary')
+  analyzers[ns].forgot(wl, binary)
+  return "Removed"
 
 app.run()
