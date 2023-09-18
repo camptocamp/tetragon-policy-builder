@@ -179,11 +179,28 @@ class ReplicasetNotfound(Exception):
   def __str__(self):
     return "Replicaset not Found: %s" % self.rs
 
+class DeploymentNotfound(Exception):
+
+  def __init__(self, deploy):
+    self.deploy = deploy
+
+  def __str__(self):
+    return "Deployment not Found: %s" % self.deploy
+
+class NotImplemented(Exception):
+
+  def __init__(self, msg):
+    self.msg = msg
+
+  def __str__(self):
+    return "Not implemented: %s" % self.msg
+
 class NamespaceAnalyser:
 
   def __init__(self, ns):
     self.ns = ns
     self.pod_to_workload = dict()
+    self.wl_selector = dict()
     self.v1 = client.CoreV1Api()
     self.appsv1 = client.AppsV1Api()
     self.binaries = BufferedDictSet()
@@ -198,6 +215,8 @@ class NamespaceAnalyser:
         rs_owner = self.getRSOwner(owner[1])
         self.pod_to_workload[pod] = rs_owner
         return rs_owner
+      else:
+        raise NotImplemented("getWorkload(%s)" % owner[0])
 
   def getPodOwner(self, pod):
     try:
@@ -214,10 +233,25 @@ class NamespaceAnalyser:
       api_response = self.appsv1.read_namespaced_replica_set(rs, self.ns, pretty=True)
       #pprint(api_response)
       owner = api_response.metadata.owner_references[0]
+      if owner.kind == "Deployment":
+        self.wl_selector["%s-%s" % (owner.kind, owner.name)] = self.getDeploymentSelector(owner.name)
+      else:
+        raise NotImplemented("getRSOwner(%s)" % owner.kind)
       return (owner.kind, owner.name)
     except ApiException as e:
       if e.reason == 'Not Found':
         raise ReplicasetNotfound(rs)
+
+  def getDeploymentSelector(self, deploy):
+    try:
+      api_response = self.appsv1.read_namespaced_deployment(deploy, self.ns, pretty=True)
+      #pprint(api_response)
+      selector = api_response.spec.selector.match_labels
+      return selector
+    except ApiException as e:
+      if e.reason == 'Not Found':
+        raise DeploymentNotfound(deploy)
+
 
   def process(self, event):
     #print("Searching workload for %s/%s" % (self.ns, event[1]))
