@@ -5,9 +5,16 @@
 {% block content %}
 
 {% for ns, analyser in analyzers.items() %}
-<h1>Namespace: {{ ns }}</h1>
+<h1 class="mt-4">Namespace: {{ ns }}</h1>
 {% for wl, binaries in analyser.binaries.getDict().items() %}
-  <h2>Workload: {{ wl }}</h2>
+  <h2 class="mt-4">Workload: {{ wl }}</h2>
+  <div class="container m-2">
+    <form method="post" action="{{ url_for('deploy_policy') }}">
+      <input type="hidden" name="ns" value="{{ ns }}">
+      <input type="hidden" name="wl" value="{{ wl }}">
+      <button type="submit" class="btn btn-secondary">Deploy/Update Policy</button>
+    </form>
+  </div>
     <ul>
       {% for binary in binaries %}
       <li>
