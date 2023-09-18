@@ -195,7 +195,9 @@ class NamespaceAnalyser:
     else:
       owner = self.getPodOwner(pod)
       if owner[0] == 'ReplicaSet':
-        return self.getRSOwner(owner[1])
+        rs_owner = self.getRSOwner(owner[1])
+        self.pod_to_workload[pod] = rs_owner
+        return rs_owner
 
   def getPodOwner(self, pod):
     try:
