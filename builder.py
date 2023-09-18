@@ -203,6 +203,7 @@ class NamespaceAnalyser:
     self.wl_selector = dict()
     self.v1 = client.CoreV1Api()
     self.appsv1 = client.AppsV1Api()
+    self.CRApi = client.CustomObjectsApi()
     self.binaries = BufferedDictSet()
     self.lock = Lock()
 
@@ -252,7 +253,6 @@ class NamespaceAnalyser:
       if e.reason == 'Not Found':
         raise DeploymentNotfound(deploy)
 
-
   def process(self, event):
     #print("Searching workload for %s/%s" % (self.ns, event[1]))
     wl = self.getWorkload(event[1])
@@ -285,6 +285,76 @@ class NamespaceAnalyser:
     with self.lock:
       return self.binaries.modificationCount()
 
+  def generatePolicy(self, wl):
+
+      manifest = {
+        "apiVersion": "cilium.io/v1alpha1",
+        "kind": "TracingPolicyNamespaced",
+        "metadata": {
+          "name": wl.lower(),
+          "namespace": self.ns,
+        },
+        "spec": {
+          "podSelector": {
+            "matchLabels" : self.wl_selector[wl]
+          },
+          "tracepoints": [
+            {
+              "subsystem": "raw_syscalls",
+              "event": "sys_exit",
+              "args": [ { "index": 4, "type": "int64"} ],
+              "selectors": [
+                {
+                  "matchArgs": [ { "index": 4, "operator": "Equal", "values": ["59", "322"] } ],
+                  "matchBinaries": [ { "operator": "NotIn", "values": list(self.binaries.getDict()[wl]) } ],
+                  "matchActions": [ { "action": "Sigkill" } ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+      pprint(manifest)
+      return manifest
+
+  def deployPolicy(self, wl):
+    self.CRApi.create_namespaced_custom_object(
+        group="cilium.io",
+        version="v1alpha1",
+        namespace=self.ns,
+        plural="tracingpoliciesnamespaced",
+        body=self.generatePolicy(wl),
+    )
+
+  def updatePolicy(self, wl):
+    if self.policyExists(wl):
+      self.deletePolicy(wl)
+    self.deployPolicy(wl)
+
+  def deletePolicy(self, wl):
+    self.CRApi.delete_namespaced_custom_object(
+        group="cilium.io",
+        version="v1alpha1",
+        name=wl.lower(),
+        namespace=self.ns,
+        plural="tracingpoliciesnamespaced",
+    )
+
+  def policyExists(self, wl):
+    try:
+      resource = self.CRApi.get_namespaced_custom_object(
+        group="cilium.io",
+        version="v1alpha1",
+        name=wl.lower(),
+        namespace=self.ns,
+        plural="tracingpoliciesnamespaced",
+      )
+    except ApiException as e:
+      if e.status == 404:
+        return False
+      else:
+        raise e
+    return True
 
 def export_policy(events: list[EventProcessExec]) -> str:
   """
