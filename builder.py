@@ -270,6 +270,23 @@ class NamespaceAnalyser:
         raise e
     return True
 
+  def getBinariesInPolicy(self, wl):
+    try:
+      resource = self.CRApi.get_namespaced_custom_object(
+        group="cilium.io",
+        version="v1alpha1",
+        name=wl.lower(),
+        namespace=self.ns,
+        plural="tracingpoliciesnamespaced",
+      )
+    except ApiException as e:
+      if e.status == 404:
+        return None
+      else:
+        raise e
+    return resource['spec']['tracepoints'][0]['selectors'][0]['matchBinaries'][0]['values']
+
+
 class BackgroundFetchEvent(Thread):
 
   def __init__(self, pod, queue):
@@ -391,5 +408,19 @@ def remove_binary():
   binary = request.form.get('binary')
   analyzers[ns].forgot(wl, binary)
   return "Removed"
+
+@app.route('/deploy_policy', methods=['POST'])
+def deploy_policy():
+  ns = request.form.get('ns')
+  wl = request.form.get('wl')
+  analyzers[ns].updatePolicy(wl)
+  return redirect(url_for('home'))
+
+@app.route('/remove_policy', methods=['POST'])
+def remove_policy():
+  ns = request.form.get('ns')
+  wl = request.form.get('wl')
+  analyzers[ns].deletePolicy(wl)
+  return redirect(url_for('home'))
 
 app.run()
