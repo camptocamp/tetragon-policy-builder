@@ -2,113 +2,18 @@ import re
 import sys
 import signal
 import json
+import yaml
 import jinja2
 import argparse
 import time
+import os
 from collections import defaultdict
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 from pprint import pprint
 from queue import SimpleQueue, Empty
 from threading import Thread, current_thread, Lock
-
-
-def parse_lines_eol_terminator(filename):
-  """
-  Yields parsed JSON data from each line of the file.
-
-  Parameters:
-  - filename (str): The name of the file to read from.
-
-  Yields:
-  - dict: If successful, a dictionary parsed from the JSON string.
-  - None: If the line couldn't be parsed as JSON or if any other error occurs.
-  """
-
-  with open(filename, 'r') as file:
-    for line in file:
-      try:
-        yield json.loads(line)
-      except json.JSONDecodeError as e:
-        print(f"Error parsing line as JSON: {e}")
-        yield None
-
-
-def parse_lines_braces_terminator(filename):
-  """
-  Yields parsed JSON data from file, counts curly braces.
-
-  Parameters:
-  - filename (str): The name of the file to read from.
-
-  Yields:
-  - dict: If successful, a dictionary parsed from the JSON string.
-  - None: If the line couldn't be parsed as JSON or if any other error occurs.
-  """
-  with open(filename, 'r') as file:
-    buffer = []
-    brace_count = 0
-    for line in file:
-      buffer.append(line.strip())
-      brace_count += line.count('{') - line.count('}')
-
-      if brace_count == 0 and buffer:
-        try:
-          yield json.loads(''.join(buffer))
-        except json.JSONDecodeError as e:
-          print(f"Error parsing lines as JSON: {e}")
-          yield None
-        buffer = []
-
-def extract_workload_prefix(ns, s):
-  """Returns workload id as:
-
-  Assumes pattern
-  workload-<rs-id>-<pod-id>
-  """
-  match = re.match(r'^(.*?)-\d+[a-zA-Z0-9-]+$', s)
-  if match:
-    return (ns, 'guess-Deployment', match.group(1))
-  else:
-    # this is very try an error, but we are guessing now workload is a deamon set
-    # we assume pattern workload-<pod-id>
-
-      match = re.match(r'^(.*?)-[a-zA-Z0-9]+$', s)
-      if match:
-        return (ns, 'guess-Deamonset', match.group(1))
-      else:
-        print(f"Error matching: {s}")
-        return None
-
-class EventProcessExec:
-  """
-  Abstraction layer, describes Tetragon observed events
-
-  """
-  def __init__(self, ns ,ctr, bin, wl):
-    self.ns = ns
-    self.ctr = ctr
-    self.bin = bin
-    self.wl  = wl
-
-  def originator(self):
-    return f"{self.ns}-{self.wl}"
-
-  def __repr__(self) -> str:
-    return f"{self.__class__.__name__}(ns='{self.ns}', wl='{self.wl}', bin='{self.bin}')"
-    #return "%s(%r)" % (self.__class__.__name__, self.__dict__)
-
-  def __eq__(self, other):
-    if not isinstance(other, self.__class__):
-      return False
-
-    return self.ns == other.ns and self.ctr == other.ctr and self.bin == other.bin and self.wl == other.wl
-
-  def __hash__(self):
-    return hash(str(f"{repr(self)}"))
-
-class EventProcessExit(EventProcessExec):
-  pass
+from flask import Flask
 
 class BufferedDictSet():
 
@@ -137,7 +42,7 @@ class BufferedDictSet():
 
   # set a value in the 'buffer' if this is not already present
   def add(self, key, value):
-    print("Adding %s for %s:\n%s" % (value, key, self))
+    print("Adding %s for %s:\n%s" % (value, key, self), file=sys.stderr)
     if key not in self.written or value not in self.written[key]:
       if key in self.to_write:
         self.to_write[key].add(value)
@@ -262,7 +167,7 @@ class NamespaceAnalyser:
       self.binaries.add("%s-%s" % (wl[0], wl[1]), event[2])
 
   def flush(self):
-     print("Flushing binaries for %s" % self.ns)
+     print("Flushing binaries for %s" % self.ns, file=sys.stderr)
 
      # Delete current configmap
      with self.lock:
@@ -314,7 +219,7 @@ class NamespaceAnalyser:
           ]
         }
       }
-      pprint(manifest)
+      #pprint(manifest)
       return manifest
 
   def deployPolicy(self, wl):
@@ -356,85 +261,28 @@ class NamespaceAnalyser:
         raise e
     return True
 
-def export_policy(events: list[EventProcessExec]) -> str:
-  """
-  Reorganizes data as graph (ns -> wl -> bin)
-  Exports data as namespaced TracingPolicies.
+class BackgroundFetchEvent(Thread):
 
-  Returns:
-    string
-  """
+  def __init__(self, pod, queue):
+    self.pod = pod
+    self.queue = queue
+    super().__init__()
 
-  # # # # # # # # #
-  # reorganize data
-
-  # events in graph
-  graph = defaultdict(lambda: defaultdict(set))
-  for item in events:
-    graph[item.ns]["%s-%s" % (item.wl[1], item.wl[2])].add(item.bin)\
-
-  # policy template
-  template_string = """
-
-{%- for ns, workloads in graph.items() %}
-  {%- for wl, bins in workloads.items() %}
----
-apiVersion: cilium.io/v1alpha1
-kind: TracingPolicyNamespaced
-metadata:
-  name: "policy-{{ wl }}-whitelist"
-  namespace: "{{ ns }}"
-spec:
-  tracepoints:
-    - subsystem: "raw_syscalls"
-      event: "sys_exit"
-      args:
-      - index: 4
-        type: "int64"
-      selectors:
-      - matchArgs:
-        - index: 4
-          operator: "Equal"
-          values:
-          - "59"
-          - "322"
-        matchBinaries:
-        - operator: "NotIn"
-          values:
-          {%- for bin in bins %}
-          - "{{ bin }}"
-          {%- endfor %}
-        matchActions:
-        - action: Sigkill
-  #podSelector:
-  #  matchLabels:
-  #    app.kubernetes.io/instance: {{ wl }}
-  # /!\ manual validation needed here ^
-  {%- endfor %}
-{%- endfor %}
-
-"""
-
-  template = jinja2.Template(template_string)
-  rendered = template.render(graph=graph)
-  return rendered
+  def run(self):
+    print("%s manage %s" % (current_thread().name, self.pod.metadata.name), file=sys.stderr)
+    v1 = client.CoreV1Api()
+    stream = v1.read_namespaced_pod_log(self.pod.metadata.name, self.pod.metadata.namespace, container="export-stdout", follow=True, _preload_content=False)
+    while True:
+      line = stream.readline()
+      if not line:
+        time.sleep(1)
+        continue
+      self.queue.put(line.decode('utf-8'))
 
 
-def read_pod_log(pod, queue):
-  print("%s manage %s" % (current_thread().name, pod.metadata.name))
-  v1 = client.CoreV1Api()
-  print('In the thread !')
-  stream = v1.read_namespaced_pod_log(pod.metadata.name, pod.metadata.namespace, container="export-stdout", follow=True, _preload_content=False)
-  while True:
-    line = stream.readline()
-    if not line:
-      time.sleep(1)
-      continue
+def parse_event(raw_event):
 
-    queue.put(json.loads(line.decode('utf-8')))
-
-def parse_event(e):
-
+    e = json.loads(raw_event)
     # Extract event type
     eventType = list(e.keys())
     eventType.remove('node_name')
@@ -467,110 +315,48 @@ class BackgroundFlush(Thread):
 
 def main():
 
-  # cli
-  parser = argparse.ArgumentParser(description="Process input from stdin or a file.")
-  mode = parser.add_mutually_exclusive_group()
-  mode.add_argument('--stream-from', type=str, help='stream from the tetragon pods, should contains a pod selector list: app.kubernetes.io/instance=tetragon,app.kubernetes.io/name=tetragon')
-  mode.add_argument('--file', type=str, help='path to input file')
-  parser.add_argument('--eol-parser', type=str, help='use EOL parser instead of braces count based parser')
-  parser.add_argument('--output', type=str, help='path to input file')
-  args = parser.parse_args()
+  # Read pod selector to find tetragon pods
+  tetragon_pod_selector = os.environ.get("TETRAGON_POD_SELECTOR", "app.kubernetes.io/instance=tetragon,app.kubernetes.io/name=tetragon")
 
   # Load K8S configuration
   config.load_kube_config()
 
+  # Load Flask App
+  app = Flask(__name__)
+
   # states
   analyzers = dict()
   events = []
+  queue = SimpleQueue()
 
-  def write_policies():
-    if args.output:
-      with open(args.output, 'w', encoding='utf-8') as f:
-        print("writing to file: ", args.output)
-        f.write(export_policy(events))
-    else:
-      print(export_policy(events))
-
-    print("# events parsed")
-    for e in events:
-      print("#", e)
-
-  # on_exit handler
-  def signal_handler(sig, frame):
-    write_policies()
-    #analyzer.print_stats()
-    sys.exit(0)
-
-  signal.signal(signal.SIGINT, signal_handler)
-
-  #  read from the file if --file
-  if args.file:
-    # set file parser
-    if args.eol_parser:
-       parser = parse_lines_eol_terminator
-    else:
-      # default parser uses braces counter
-      parser = parse_lines_braces_terminator
-
-    # parse
-    for line_number, data in enumerate(parser(args.file), 1):
-      if data:
-        #print(f"Parsed data from line {line_number}: {data}")
-        e = analyzer.process(data)
-        if e is None:
-          print(f"Couldn't parse data from line number {line_number}.")
-        if e not in events:
-          events.append(e)
   # read from pods logs
-  elif args.stream_from:
-    v1 = client.CoreV1Api()
+  v1 = client.CoreV1Api()
 
-    try:
-      pod_list = v1.list_pod_for_all_namespaces(pretty=True, label_selector=args.stream_from)
-      #pprint(pod_list)
-    except ApiException as e:
-      print("Exception when calling CoreV1Api->list_namespaced_pod: %s\n" % e)
+  # Search for tetragon pods
+  pod_list = v1.list_pod_for_all_namespaces(pretty=True, label_selector=tetragon_pod_selector)
 
-    queue = SimpleQueue()
-    threads = []
+  for pod in pod_list.items:
+    t = BackgroundFetchEvent(pod, queue)
+    t.start()
 
-    for pod in pod_list.items:
-      t = Thread(name=pod.metadata.name, target=read_pod_log, args=(pod, queue))
-      t.start()
-      threads.append(t)
+  bg_sync = BackgroundFlush(analyzers)
+  bg_sync.start()
 
-    bg_sync = BackgroundFlush(analyzers)
-    bg_sync.start()
+  # read message from the queue
+  msg = None
+  while True:
+    #print("Waiting for message")
+    msg = queue.get(block=True)
 
-    # read message from the queue
-    msg = None
-    while True:
-      #print("Waiting for message")
-      msg = queue.get(block=True)
-
-      #print("Process one message")
-      # Parse event
-      event = parse_event(msg)
-      if event:
-        if event[0] not in analyzers:
-          analyzers[event[0]] = NamespaceAnalyser(event[0])
-        analyzers[event[0]].process(event)
-        if analyzers[event[0]].modificationCount() > 10:
-          analyzers[event[0]].flush()
-
-
-  # else read from stdin
-  else:
-    for line in sys.stdin:
-      data = json.loads(''.join(line))
-      e = analyzer.process(data)
-      if e is None:
-        print(f"Couldn't parse data from line {line}.")
-      if e not in events:
-        events.append(e)
-
-  # Dump results to file at the end
-  write_policies()
+    #print("Process one message")
+    # Parse event
+    event = parse_event(msg)
+    if event:
+      if event[0] not in analyzers:
+        analyzers[event[0]] = NamespaceAnalyser(event[0])
+      analyzers[event[0]].process(event)
+      if analyzers[event[0]].modificationCount() > 10:
+        analyzers[event[0]].flush()
 
 
 if __name__ == "__main__":
