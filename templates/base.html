@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+  <title>{% block title %}Policy Builder{% endblock %}</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='fontawesome-free-6.1.1-web/css/all.css') }}" >
+  <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <script src="{{ url_for('static', filename='jquery-3.7.1.min.js') }}"></script>
+  {{ bootstrap.load_css() }}
+  {{ moment.include_moment() }}
+  {{ moment.locale('fr') }}
+</head>
+<body>
+  <div style="background-image: url('{{ url_for('static', filename='background_policy_builder.jpg') }}'); background-attachment: fixed;">
+  <nav class="navbar navbar-expand-lg bg-dark" style="height: 110px;">
+    <a class="navbar-brand" href="{{ url_for('home') }}"><img src="{{ url_for('static', filename='logo.png')}}" class="mx-2" id="logo"></a>
+    <a class="navbar-brand text-light fs-1" id="title" href="#">Tetragon Policy Builder</a>
+  </nav>
+  <main class="container bg-light p-4 {% block main_class %}{% endblock %}" id="main-container">
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+    <div class="flash m-3 alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+</main>
+</div>
+{{ bootstrap.load_js() }}
+  <script>
+    {% block script %}{% endblock %}
+  </script>
+</body>
+</html>
