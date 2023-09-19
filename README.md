@@ -74,7 +74,7 @@ The docker container will need to authenticate to the kubernetes. You will need
 to share the kubeconfig to the container:
 
 ```bash
-$ docker run -p 5000:5000 -e KUBECONFIG=/tmp/kubeconfig -v $KUBECONFIG:/tmp/kubeconfig ghcr.io/camptocamp/tetragon-policy-builder:latest
+$ docker run -p 5000:5000 -e KUBECONFIG=/tmp/kubeconfig -v $KUBECONFIG:/tmp/kubeconfig ghcr.io/camptocamp/tetragon-policy-builder:master
 ```
 
 Be sure to cleanup configmap created by the policy builder with:
