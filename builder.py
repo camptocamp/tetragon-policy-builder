@@ -45,7 +45,7 @@ class BufferedDictSet():
 
   # set a value in the 'buffer' if this is not already present
   def add(self, key, value):
-    print("Adding %s for %s:\n%s" % (value, key, self), file=sys.stderr)
+    #print("Adding %s for %s:\n%s" % (value, key, self), file=sys.stderr)
     if key not in self.written or value not in self.written[key]:
       if key in self.to_write:
         self.to_write[key].add(value)

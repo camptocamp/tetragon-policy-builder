@@ -78,7 +78,6 @@
           url: "{{ url_for('remove_binary') }}",
           data: { ns: ns, wl: wl, binary: binary },
           success: function (response) {
-              console.log("Response:", response);
               window.location.reload();
           },
           error: function (error) {
@@ -101,7 +100,6 @@ if (yamlPolicyModal) {
         type: "GET",
         url: "/show_policy/" + ns + "/" + wl,
         success: function (response) {
-            console.log("Response:", response);
             // Inject yaml in the modal
             yaml.textContent = response;
             hljs.highlightAll();
