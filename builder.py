@@ -366,7 +366,10 @@ class BackgroundAnalyser(Thread):
 tetragon_pod_selector = os.environ.get("TETRAGON_POD_SELECTOR", "app.kubernetes.io/instance=tetragon,app.kubernetes.io/name=tetragon")
 
 # Load K8S configuration
-config.load_kube_config()
+try:
+  config.load_kube_config()
+except ConfigException:
+  config.load_incluster_config()
 
 # Load Flask App
 app = Flask(__name__)

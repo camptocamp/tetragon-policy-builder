@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/camptocamp/tetragon-policy-builder
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   tag: "master"
 
 tetragon_pod_selector:
