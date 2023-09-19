@@ -7,8 +7,6 @@ rules:
 - apiGroups: [""]
   resources: ["configmaps"]
   verbs: ["get", "list", "create", "update", "delete"]
-  resourceNames:
-  - tetragon-binaries
 - apiGroups: ["cilium.io"]
   resources: ["tracingpoliciesnamespaced"]
   verbs: ["get", "list", "create", "update", "delete"]
