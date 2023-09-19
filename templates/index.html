@@ -11,6 +11,10 @@
   <h2 class="mt-4">Workload: {{ wl }}</h2>
   <div class="container m-2">
     <div class="clearfix">
+      <button type="button" class="btn btn-primary action-button m-2" data-bs-toggle="modal" data-bs-target="#yamlPolicyModal"
+              data-bs-ns="{{ ns }}" data-bs-wl="{{ wl }}">
+          Show Policy
+      </button>
       {% set deployed = binary_in_policy is not none %}
       <form method="post" action="{{ url_for('deploy_policy') }}" class="action-button">
         <input type="hidden" name="ns" value="{{ ns }}">
@@ -43,6 +47,21 @@
 
 {% endfor %}
 {% endfor %}
+
+<!-- Modal to display TracingPolicies manifest -->
+<div class="modal fade" id="yamlPolicyModal" tabindex="-1" aria-labelledby="yamlPolicyModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="yamlPolicyModalLabel">Policy Manifest</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+      <pre><code id="yamlPolicyModalBody" class="language-yaml"></code></pre>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block script %}
@@ -67,4 +86,20 @@
           }
       });
   });
+
+const yamlPolicyModal = document.getElementById('yamlPolicyModal')
+if (yamlPolicyModal) {
+  yamlPolicyModal.addEventListener('show.bs.modal', event => {
+    const button = event.relatedTarget
+    // Extract ns and wl
+    const ns = button.getAttribute('data-bs-ns')
+    const wl = button.getAttribute('data-bs-wl')
+    // fetch yaml manifest
+
+    // Inject yaml in the modal
+    const yaml = document.getElementById('yamlPolicyModalBody');
+    yaml.textContent = ns + " " + wl;
+    hljs.highlightAll();
+  })
+}
 {% endblock %}
