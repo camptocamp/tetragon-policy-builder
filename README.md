@@ -1,7 +1,11 @@
-<a href="https://tetragon.cilium.io">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/camptocamp/tetragon-policy-builder/fetch_selector/static/logo.png" width="200">
-    <img src="https://raw.githubusercontent.com/camptocamp/tetragon-policy-builder/fetch_selector/static/logo.png" width="200">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/camptocamp/tetragon-policy-builder/fetch_selector/static/logo.png" width="200">
+  <img src="https://raw.githubusercontent.com/camptocamp/tetragon-policy-builder/fetch_selector/static/logo.png" width="200">
+</picture>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<a href="https://github.com/camptocamp/tetragon-policy-builder/blob/fetch_selector/screenshot1.png">
+  <picture style="margin-left: 100px;">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/camptocamp/tetragon-policy-builder/fetch_selector/screenshot2.png" height="200">
+    <img src="https://raw.githubusercontent.com/camptocamp/tetragon-policy-builder/fetch_selector/static/screenshot2.png" height="200">
   </picture>
 </a>
 
