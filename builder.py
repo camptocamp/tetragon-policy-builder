@@ -190,7 +190,7 @@ class NamespaceAnalyser:
        body = client.V1ConfigMap(
          api_version="v1",
          kind="ConfigMap",
-         metadata=client.V1ObjectMeta(name="tetragon-binaries"),
+         metadata=client.V1ObjectMeta(name="tetragon-binaries", labels={"generated-by": "tetragon-policy-builder"}),
          data={wl: json.dumps(list(value)) for (wl, value) in self.binaries.getDict().items()}
        )
        self.v1.create_namespaced_config_map(namespace=self.ns, body=body)
