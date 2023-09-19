@@ -18,7 +18,7 @@
     <a class="navbar-brand" href="{{ url_for('home') }}"><img src="{{ url_for('static', filename='logo.png')}}" class="mx-2" id="logo"></a>
     <a class="navbar-brand text-light fs-1" id="title" href="#">Tetragon Policy Builder</a>
   </nav>
-  <main class="container bg-light {% block main_class %}{% endblock %}" id="main-container">
+  <main class="container bg-light p-4 {% block main_class %}{% endblock %}" id="main-container">
     {% for category, message in get_flashed_messages(with_categories=true) %}
     <div class="flash m-3 alert alert-{{ category }}">{{ message }}</div>
     {% endfor %}
