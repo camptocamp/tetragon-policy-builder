@@ -431,4 +431,8 @@ def remove_policy():
   analyzers[ns].deletePolicy(wl)
   return redirect(url_for('home'))
 
+@app.route("/show_policy/<ns>/<wl>")
+def get_policy(ns, wl):
+  return yaml.dump(analyzers[ns].generatePolicy(wl))
+
 app.run(host="0.0.0.0", port=5000)

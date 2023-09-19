@@ -50,13 +50,13 @@
 
 <!-- Modal to display TracingPolicies manifest -->
 <div class="modal fade" id="yamlPolicyModal" tabindex="-1" aria-labelledby="yamlPolicyModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <h1 class="modal-title fs-5" id="yamlPolicyModalLabel">Policy Manifest</h1>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body p-0">
       <pre><code id="yamlPolicyModalBody" class="language-yaml"></code></pre>
       </div>
     </div>
@@ -94,12 +94,24 @@ if (yamlPolicyModal) {
     // Extract ns and wl
     const ns = button.getAttribute('data-bs-ns')
     const wl = button.getAttribute('data-bs-wl')
-    // fetch yaml manifest
-
-    // Inject yaml in the modal
     const yaml = document.getElementById('yamlPolicyModalBody');
-    yaml.textContent = ns + " " + wl;
-    hljs.highlightAll();
+    yaml.textContent = "";
+    // fetch yaml manifest
+    $.ajax({
+        type: "GET",
+        url: "/show_policy/" + ns + "/" + wl,
+        success: function (response) {
+            console.log("Response:", response);
+            // Inject yaml in the modal
+            yaml.textContent = response;
+            hljs.highlightAll();
+        },
+        error: function (error) {
+            console.error("Error:", error);
+        }
+    });
+
+
   })
 }
 {% endblock %}
