@@ -101,7 +101,15 @@ class DaemonSetNotfound(Exception):
     self.ds = ds
 
   def __str__(self):
-    return "DaemonSet not Found: %s" % self.deploy
+    return "DaemonSet not Found: %s" % self.ds
+
+class StatefulSetNotfound(Exception):
+
+  def __init__(self, sts):
+    self.sts = sts
+
+  def __str__(self):
+    return "StatefulSet not Found: %s" % self.sts
 
 class NotImplemented(Exception):
 
@@ -135,6 +143,10 @@ class NamespaceAnalyser:
       elif owner[0] == 'DaemonSet':
         self.pod_to_workload[pod] = owner
         self.wl_selector["%s-%s" % (owner[0], owner[1])] = self.getDaemonSetSelector(owner[1])
+        return owner
+      elif owner[0] == 'StatefulSet':
+        self.pod_to_workload[pod] = owner
+        self.wl_selector["%s-%s" % (owner[0], owner[1])] = self.getStatefulSetSelector(owner[1])
         return owner
       else:
         raise NotImplemented("getWorkload(%s)" % owner[0])
@@ -182,6 +194,16 @@ class NamespaceAnalyser:
     except ApiException as e:
       if e.reason == 'Not Found':
         raise DaemonSetNotfound(ds)
+
+  def getStatefulSetSelector(self, sts):
+    try:
+      api_response = self.appsv1.read_namespaced_stateful_set(sts, self.ns, pretty=True)
+      #pprint(api_response)
+      selector = api_response.spec.selector.match_labels
+      return selector
+    except ApiException as e:
+      if e.reason == 'Not Found':
+        raise StatefulSetNotfound(sts)
 
   def process(self, event):
     try:
