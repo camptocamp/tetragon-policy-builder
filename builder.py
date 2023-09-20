@@ -95,6 +95,14 @@ class DeploymentNotfound(Exception):
   def __str__(self):
     return "Deployment not Found: %s" % self.deploy
 
+class DaemonSetNotfound(Exception):
+
+  def __init__(self, ds):
+    self.ds = ds
+
+  def __str__(self):
+    return "DaemonSet not Found: %s" % self.deploy
+
 class NotImplemented(Exception):
 
   def __init__(self, msg):
@@ -124,6 +132,10 @@ class NamespaceAnalyser:
         rs_owner = self.getRSOwner(owner[1])
         self.pod_to_workload[pod] = rs_owner
         return rs_owner
+      elif owner[0] == 'DaemonSet':
+        self.pod_to_workload[pod] = owner
+        self.wl_selector["%s-%s" % (owner[0], owner[1])] = self.getDaemonSetSelector(owner[1])
+        return owner
       else:
         raise NotImplemented("getWorkload(%s)" % owner[0])
 
@@ -161,13 +173,26 @@ class NamespaceAnalyser:
       if e.reason == 'Not Found':
         raise DeploymentNotfound(deploy)
 
-  def process(self, event):
-    #print("Searching workload for %s/%s" % (self.ns, event[1]))
-    wl = self.getWorkload(event[1])
-    #print("Workload for %s/%s is %s" % (self.ns, event[1], wl))
+  def getDaemonSetSelector(self, ds):
+    try:
+      api_response = self.appsv1.read_namespaced_daemon_set(ds, self.ns, pretty=True)
+      #pprint(api_response)
+      selector = api_response.spec.selector.match_labels
+      return selector
+    except ApiException as e:
+      if e.reason == 'Not Found':
+        raise DaemonSetNotfound(ds)
 
-    with self.lock:
-      self.binaries.add("%s-%s" % (wl[0], wl[1]), event[2])
+  def process(self, event):
+    try:
+      #print("Searching workload for %s/%s" % (self.ns, event[1]))
+      wl = self.getWorkload(event[1])
+      #print("Workload for %s/%s is %s" % (self.ns, event[1], wl))
+
+      with self.lock:
+        self.binaries.add("%s-%s" % (wl[0], wl[1]), event[2])
+    except PodNotfound as e:
+      print(e)
 
   def forgot(self, wl, binary):
     if wl in self.binaries.written and binary in self.binaries.written[wl]:
