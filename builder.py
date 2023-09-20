@@ -129,12 +129,30 @@ class NamespaceAnalyser:
     self.appsv1 = client.AppsV1Api()
     self.CRApi = client.CustomObjectsApi()
     self.binaries = BufferedDictSet()
+    # Populate binaries from configmap
+    self._loadBinariesFromCM()
     self.lock = Lock()
+    self.orphanPod = set()
+
+  def _loadBinariesFromCM(self):
+    try:
+      print("Loading binaries from ConfigMap %s/tetragon-binaries" % self.ns)
+      api_response = self.v1.read_namespaced_config_map("tetragon-binaries", self.ns, pretty=True)
+      self.binaries.written = { wl: set(json.loads(bins)) for (wl, bins) in api_response.data.items()}
+      print("%s/tetragon-binaries ConfigMap found" % self.ns)
+      print(self.binaries)
+    except ApiException as e:
+      if e.reason == 'Not Found':
+        print("%s/tetragon-binaries ConfigMap not found" % self.ns)
+      else:
+        raise e
 
   def getWorkload(self, pod):
     if pod in self.pod_to_workload:
       return self.pod_to_workload[pod]
     else:
+      if pod in self.orphanPod:
+        raise PodNotfound(pod)
       owner = self.getPodOwner(pod)
       if owner[0] == 'ReplicaSet':
         rs_owner = self.getRSOwner(owner[1])
@@ -159,7 +177,10 @@ class NamespaceAnalyser:
       return (owner.kind, owner.name)
     except ApiException as e:
       if e.reason == 'Not Found':
+        self.orphanPod.add(pod)
         raise PodNotfound(pod)
+      else:
+        raise e
 
   def getRSOwner(self, rs):
     try:
@@ -174,6 +195,8 @@ class NamespaceAnalyser:
     except ApiException as e:
       if e.reason == 'Not Found':
         raise ReplicasetNotfound(rs)
+      else:
+        raise e
 
   def getDeploymentSelector(self, deploy):
     try:
@@ -184,6 +207,8 @@ class NamespaceAnalyser:
     except ApiException as e:
       if e.reason == 'Not Found':
         raise DeploymentNotfound(deploy)
+      else:
+        raise e
 
   def getDaemonSetSelector(self, ds):
     try:
@@ -194,6 +219,8 @@ class NamespaceAnalyser:
     except ApiException as e:
       if e.reason == 'Not Found':
         raise DaemonSetNotfound(ds)
+      else:
+        raise e
 
   def getStatefulSetSelector(self, sts):
     try:
@@ -204,6 +231,8 @@ class NamespaceAnalyser:
     except ApiException as e:
       if e.reason == 'Not Found':
         raise StatefulSetNotfound(sts)
+      else:
+        raise e
 
   def process(self, event):
     try:
