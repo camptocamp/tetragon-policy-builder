@@ -364,7 +364,7 @@ class BackgroundFlush(Thread):
   def run(self):
     while True:
       time.sleep(10)
-      for _, analyzer in self.analyzers.items():
+      for _, analyzer in self.analyzers.copy().items():
         if analyzer.modificationCount() > 0:
           analyzer.flush()
 
@@ -450,7 +450,7 @@ bg_analyzer.start()
 
 @app.route("/")
 def home():
-  return render_template('index.html', analyzers=analyzers)
+  return render_template('index.html', analyzers=analyzers.copy())
 
 @app.route("/health")
 def health():
