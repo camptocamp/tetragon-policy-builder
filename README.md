@@ -44,7 +44,7 @@ $ helm install -n kube-system policy-builder helm/tetragon-policy-builder
 Then you can open a "port-forward" to access the web UI:
 
 ```bash
-kubectl port-forward -n kube-system deploy/policy-builder 5000:5000
+kubectl port-forward -n kube-system deploy/policy-builder-tetragon-policy-builder 5000:5000
 ```
 
 and access the interface with your wen browser: [http://localhost:5000/](http://localhost:5000/)
