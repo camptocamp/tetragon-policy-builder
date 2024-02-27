@@ -1,123 +1,21 @@
-import re
 import sys
-import signal
 import json
+import uuid
 import yaml
-import jinja2
-import argparse
 import time
 import os
-from collections import defaultdict
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 from kubernetes.config.config_exception import ConfigException
 from pprint import pprint
 from queue import SimpleQueue, Empty
 from threading import Thread, current_thread, Lock
-from flask import Flask, render_template, request, url_for, redirect
+from flask import Flask, render_template, request, url_for, redirect, jsonify
 from flask_bootstrap import Bootstrap5
 from flask_moment import Moment
+from utils import *
 
-class BufferedDictSet():
-
-  # Dictionary of Set with a modification Buffer
-  # to be able to make batch modifications.
-  #
-  # d = BufferedDictSet()
-  # d.add("a", 2)
-  # d.add("b", 3) 2 pending modifications
-  # d.add("a", 3) 3 pending modifications
-  # write_to_disk(d.getDict()) --> {"a": {2, 3}, "b": {3}}
-  # d.flush() no more pending modifications
-
-  def __init__(self):
-    self.written = dict()
-    self.to_write = dict()
-
-  def __str__(self):
-    res = "Written:\n"
-    for wl, bins in self.written.items():
-      res += "%s: %s\n" % (wl, ",".join(bins))
-    res += "To write:\n"
-    for wl, bins in self.to_write.items():
-      res += "%s: %s\n" % (wl, ",".join(bins))
-    return res
-
-  # set a value in the 'buffer' if this is not already present
-  def add(self, key, value):
-    #print("Adding %s for %s:\n%s" % (value, key, self), file=sys.stderr)
-    if key not in self.written or value not in self.written[key]:
-      if key in self.to_write:
-        self.to_write[key].add(value)
-      else:
-        self.to_write[key] = {value}
-
-  def modificationCount(self):
-    return len(self.to_write)
-
-  def getDict(self):
-    # deep merge !
-    res = dict()
-    for key in self.written:
-      res[key] = self.written[key]
-    for key in self.to_write:
-      if key in res:
-        res[key].update(self.to_write[key])
-      else:
-        res[key] = self.to_write[key]
-    return res
-
-  def flush(self):
-    self.written = self.getDict()
-    self.to_write = dict()
-
-class PodNotfound(Exception):
-
-  def __init__(self, pod):
-    self.pod = pod
-
-  def __str__(self):
-    return "Pod not Found: %s" % self.pod
-
-class ReplicasetNotfound(Exception):
-
-  def __init__(self, rs):
-    self.rs = rs
-
-  def __str__(self):
-    return "Replicaset not Found: %s" % self.rs
-
-class DeploymentNotfound(Exception):
-
-  def __init__(self, deploy):
-    self.deploy = deploy
-
-  def __str__(self):
-    return "Deployment not Found: %s" % self.deploy
-
-class DaemonSetNotfound(Exception):
-
-  def __init__(self, ds):
-    self.ds = ds
-
-  def __str__(self):
-    return "DaemonSet not Found: %s" % self.ds
-
-class StatefulSetNotfound(Exception):
-
-  def __init__(self, sts):
-    self.sts = sts
-
-  def __str__(self):
-    return "StatefulSet not Found: %s" % self.sts
-
-class NotImplemented(Exception):
-
-  def __init__(self, msg):
-    self.msg = msg
-
-  def __str__(self):
-    return "Not implemented: %s" % self.msg
+BUFFER_SIZE = 10
 
 class NamespaceAnalyser:
 
@@ -133,6 +31,7 @@ class NamespaceAnalyser:
     self._loadBinariesFromCM()
     self.lock = Lock()
     self.orphanPod = set()
+    self.events_tail = Buffer(BUFFER_SIZE)
 
   def _loadBinariesFromCM(self):
     try:
@@ -154,7 +53,9 @@ class NamespaceAnalyser:
       if pod in self.orphanPod:
         raise PodNotfound(pod)
       owner = self.getPodOwner(pod)
-      if owner[0] == 'ReplicaSet':
+      if not owner:
+        return "unknown"
+      elif owner[0] == 'ReplicaSet':
         rs_owner = self.getRSOwner(owner[1])
         self.pod_to_workload[pod] = rs_owner
         return rs_owner
@@ -181,6 +82,8 @@ class NamespaceAnalyser:
         raise PodNotfound(pod)
       else:
         raise e
+    except TypeError as e:
+      pprint(api_response)
 
   def getRSOwner(self, rs):
     try:
@@ -237,11 +140,28 @@ class NamespaceAnalyser:
   def process(self, event):
     try:
       #print("Searching workload for %s/%s" % (self.ns, event[1]))
+      tail = self.events_tail.get()
+      if len(tail)>0:
+        pprint(tail)
+      else:
+        print('no events in tail buffer')
+
       wl = self.getWorkload(event[1])
-      #print("Workload for %s/%s is %s" % (self.ns, event[1], wl))
+      print("Workload for %s/%s is %s" % (self.ns, event[1], wl))
 
       with self.lock:
+        print(event)
         self.binaries.add("%s-%s" % (wl[0], wl[1]), event[2])
+        self.events_tail.append(
+          # return (ns 0, pod, bin, args, start, auid 5)
+          {
+          'id': event[5], # auid
+          'content': '{} {}'.format(event[2],event[3]), # bin info
+          'start': event[4], # start process time
+          'group': wl[1],
+          }
+        )
+
     except PodNotfound as e:
       print(e)
 
@@ -307,6 +227,10 @@ class NamespaceAnalyser:
       }
       #pprint(manifest)
       return manifest
+
+  def getEvents(self):
+    return self.events_tail.get()
+
 
   def deployPolicy(self, wl):
     self.CRApi.create_namespaced_custom_object(
@@ -382,8 +306,6 @@ class BackgroundFetchEvent(Thread):
         continue
       self.queue.put(line.decode('utf-8'))
 
-
-
 class BackgroundFlush(Thread):
 
   def __init__(self, analyzers):
@@ -433,11 +355,21 @@ class BackgroundAnalyser(Thread):
       if eventType != "process_exec":
         return None
 
+      # print("parsing event")
+      # pprint(e)
+
       # Extract metadata
       ns = e[eventType]["process"]["pod"]["namespace"]
       pod = e[eventType]["process"]["pod"]["name"]
       bin = e[eventType]["process"]["binary"]
-      return (ns, pod, bin)
+      try:
+        args = e[eventType]["process"]["arguments"]
+      except KeyError:
+        args = ""
+      start = e[eventType]["process"]["start_time"]
+      #auid = e[eventType]["process"]["auid"]
+      auid = uuid.uuid4()
+      return (ns, pod, bin, args, start, auid)
 
 # Read pod selector to find tetragon pods
 tetragon_pod_selector = os.environ.get("TETRAGON_POD_SELECTOR", "app.kubernetes.io/instance=tetragon,app.kubernetes.io/name=tetragon")
@@ -509,6 +441,10 @@ def remove_policy():
 
 @app.route("/show_policy/<ns>/<wl>")
 def get_policy(ns, wl):
-  return yaml.dump(analyzers[ns].generatePolicy(wl))
+  return yaml.dump([analyzers[ns].generatePolicy(wl)])
 
-app.run(host="0.0.0.0", port=5000)
+@app.route("/events/<ns>")
+def get_events(ns):
+  return jsonify(analyzers[ns].getEvents())
+
+app.run(host="0.0.0.0", port=5000, debug = True)

@@ -6,6 +6,7 @@
 
 {% for ns, analyser in analyzers.items() %}
 <h1 class="bg-dark text-light p-2">Namespace: {{ ns }}</h1>
+
 {% for wl, binaries in analyser.binaries.getDict().items() %}
   {% set binary_in_policy = analyser.getBinariesInPolicy(wl) %}
   <h2 class="mt-4">Workload: {{ wl }}</h2>
@@ -14,6 +15,10 @@
       <button type="button" class="btn btn-primary action-button m-2" data-bs-toggle="modal" data-bs-target="#yamlPolicyModal"
               data-bs-ns="{{ ns }}" data-bs-wl="{{ wl }}">
           Show Policy
+      </button>
+      <button type="button" class="btn btn-primary action-button m-2" data-bs-toggle="modal" data-bs-target="#timelineModal"
+              data-bs-ns="{{ ns }}" data-bs-wl="{{ wl }}">
+          Show Timeline
       </button>
       {% set deployed = binary_in_policy is not none %}
       <form method="post" action="{{ url_for('deploy_policy') }}" class="action-button">
@@ -58,6 +63,21 @@
       </div>
       <div class="modal-body p-0">
       <pre><code id="yamlPolicyModalBody" class="language-yaml"></code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal to display Timeline -->
+<div class="modal fade" id="timelineModal" tabindex="-1" aria-labelledby="timelineModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="timelineModal">Events Timeline</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="timelineContainer"></div>
       </div>
     </div>
   </div>
@@ -108,8 +128,144 @@ if (yamlPolicyModal) {
             console.error("Error:", error);
         }
     });
-
-
   })
 }
+
+const timelineModal = document.getElementById('timelineModal')
+if (timelineModal) {
+  timelineModal.addEventListener('show.bs.modal', event => {
+    const button = event.relatedTarget
+    // Extract ns and wl
+    const ns = button.getAttribute('data-bs-ns')
+    const wl = button.getAttribute('data-bs-wl')
+
+    $.ajax({
+        type: "GET",
+        url: "/events/" + ns,
+        success: function (response) {
+          console.error(response)
+          generateTimeline(response);
+        },
+        error: function (error) {
+            console.error("Error:", error);
+        }
+    });
+  })
+}
+
+function generateTimeline(data) {
+  var container = document.getElementById('timelineContainer');
+  var items = new vis.DataSet(data);
+  var groups = new vis.DataSet([
+    {
+      id: 1,
+      content: "berlin-odoo-ouest-lab"
+    },
+  ]);
+
+  var options = {
+    start: "2024-01-01T00:00:00.0Z",
+    end: "2024-03-10T00:00:00.0Z",
+    editable: true,
+  };
+
+  var timeline = new vis.Timeline(container, items, groups, options);
+  }
+
+function generateTimelineDummy(data) {
+  var container = document.getElementById('timelineContainer');
+
+  var items = new vis.DataSet(
+    [
+      {
+        id: "A",
+        content: "Period A",
+        start: "2014-01-16",
+        end: "2014-01-22",
+        type: "background",
+        group: 1,
+      },
+      {
+        id: "B",
+        content: "Period B",
+        start: "2014-01-23",
+        end: "2014-01-26",
+        type: "background",
+        group: 2,
+      },
+      {
+        id: "C",
+        content: "Period C",
+        start: "2014-01-27",
+        end: "2014-02-03",
+        type: "background",
+      }, // no group
+      {
+        id: "D",
+        content: "Period D",
+        start: "2014-01-14",
+        end: "2014-01-20",
+        type: "background",
+        group: "non-existing",
+      },
+      {
+        id: 1,
+        content: "item 1<br>start",
+        start: "2014-01-30",
+        group: 1
+      },
+      {
+        id: 2,
+        content: "item 2",
+        start: "2014-01-18",
+        group: 1
+      },
+      {
+        id: 3,
+        content: "item 3",
+        start: "2014-01-21",
+        group: 2
+      },
+      {
+        id: 4,
+        content: "item 4",
+        start: "2014-01-17",
+        end: "2014-01-21",
+        group: 2,
+      },
+      {
+        id: 5,
+        content: "item 5",
+        start: "2014-01-28",
+        type: "point",
+        group: 2
+      },
+      {
+        id: 6,
+        content: "item 6",
+        start: "2014-01-25",
+        group: 2
+      },
+    ]);
+
+  var groups = new vis.DataSet([{
+      id: 1,
+      content: "Group 1"
+    },
+    {
+      id: 2,
+      content: "Group 2"
+    },
+  ]);
+
+  var container = document.getElementById("timelineContainer");
+  var options = {
+    start: "2014-01-10",
+    end: "2014-02-10",
+    editable: true,
+  };
+
+  var timeline = new vis.Timeline(container, items, groups, options);
+  }
+
 {% endblock %}
