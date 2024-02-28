@@ -78,7 +78,7 @@ Show Timeline
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h1 class="modal-title fs-5" id="timelineModal">Events Timeline</h1>
+        <h1 class="modal-title fs-5" id="timelineModalLabel">Timeline</h1>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-0">
@@ -87,6 +87,8 @@ Show Timeline
     </div>
   </div>
 </div>
+
+
 {% endblock %}
 
 {% block script %}
@@ -138,6 +140,26 @@ if (yamlPolicyModal) {
 
 const timelineModal = document.getElementById('timelineModal')
 if (timelineModal) {
+  function generateTimeline(data) {
+    var options = {
+      stack: true,
+      dataAttributes: 'all',
+      horizontalScroll: true,
+      margin: {
+        item: 5,
+        axis: 5,
+      },
+      start: new Date(),
+      end: new Date(1000 * 60 * 60 * 24 + new Date().valueOf()),
+    };
+
+    const timelineContainer = document.getElementById('timelineContainer');
+    var timeline = new vis.Timeline(timelineContainer, null, options);
+    timeline.setGroups(data.groups)
+    timeline.setItems(data.items)
+    timeline.redraw()
+  }
+
   timelineModal.addEventListener('show.bs.modal', event => {
     const button = event.relatedTarget
     // Extract ns and wl
@@ -155,24 +177,9 @@ if (timelineModal) {
         }
     });
   })
+
 }
 
-function generateTimeline(data) {
 
-  var options = {
-    stack: false,
-    start: new Date(),
-    end: new Date(1000*60*60*24 + (new Date()).valueOf()),
-    margin: {
-      item: 10, // minimal margin between items
-      axis: 5   // minimal margin between items and the axis
-    },
-    orientation: 'top'
-  };
-  var container = document.getElementById('timelineContainer');
-  var timeline = new vis.Timeline(container, null, options);
-  timeline.setGroups(data.groups)
-  timeline.setItems(data.items)
-  }
 
 {% endblock %}
