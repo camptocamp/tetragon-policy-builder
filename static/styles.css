@@ -29,7 +29,7 @@ body, html {
 
 #visualization {
   box-sizing: border-box;
-  width: 100%;
+  width: 400px;
   height: 300px;
 }
 

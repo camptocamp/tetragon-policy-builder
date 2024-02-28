@@ -15,7 +15,7 @@ from flask_bootstrap import Bootstrap5
 from flask_moment import Moment
 from utils import *
 
-BUFFER_SIZE = 10
+BUFFER_SIZE = 100
 
 class NamespaceAnalyser:
 
@@ -54,7 +54,7 @@ class NamespaceAnalyser:
         raise PodNotfound(pod)
       owner = self.getPodOwner(pod)
       if not owner:
-        return "unknown"
+        return "misc"
       elif owner[0] == 'ReplicaSet':
         rs_owner = self.getRSOwner(owner[1])
         self.pod_to_workload[pod] = rs_owner
@@ -83,7 +83,9 @@ class NamespaceAnalyser:
       else:
         raise e
     except TypeError as e:
-      pprint(api_response)
+      print("No owner found for {}".format(api_response.metadata))
+      return (None,"misc")
+      #pprint(api_response)
 
   def getRSOwner(self, rs):
     try:
@@ -139,28 +141,12 @@ class NamespaceAnalyser:
 
   def process(self, event):
     try:
-      #print("Searching workload for %s/%s" % (self.ns, event[1]))
-      tail = self.events_tail.get()
-      if len(tail)>0:
-        pprint(tail)
-      else:
-        print('no events in tail buffer')
-
       wl = self.getWorkload(event[1])
-      print("Workload for %s/%s is %s" % (self.ns, event[1], wl))
+      #print("Workload for %s/%s is %s" % (self.ns, event[1], wl))
 
       with self.lock:
-        print(event)
         self.binaries.add("%s-%s" % (wl[0], wl[1]), event[2])
-        self.events_tail.append(
-          # return (ns 0, pod, bin, args, start, auid 5)
-          {
-          'id': event[5], # auid
-          'content': '{} {}'.format(event[2],event[3]), # bin info
-          'start': event[4], # start process time
-          'group': wl[1],
-          }
-        )
+        self.events_tail.append(event+(wl[0], wl[1]))
 
     except PodNotfound as e:
       print(e)
@@ -367,8 +353,8 @@ class BackgroundAnalyser(Thread):
       except KeyError:
         args = ""
       start = e[eventType]["process"]["start_time"]
-      #auid = e[eventType]["process"]["auid"]
-      auid = uuid.uuid4()
+      auid = e[eventType]["process"]["auid"]
+
       return (ns, pod, bin, args, start, auid)
 
 # Read pod selector to find tetragon pods
@@ -441,10 +427,35 @@ def remove_policy():
 
 @app.route("/show_policy/<ns>/<wl>")
 def get_policy(ns, wl):
-  return yaml.dump([analyzers[ns].generatePolicy(wl)])
+  return yaml.dump(analyzers[ns].generatePolicy(wl))
 
 @app.route("/events/<ns>")
 def get_events(ns):
-  return jsonify(analyzers[ns].getEvents())
+  if not ns in analyzers:
+    return jsonify([])
+
+  events = [x for x in analyzers[ns].getEvents() if x is not None]
+  groups = list(set(["{}.{}".format(e[6],e[7]) for e in events]))
+
+  if len(events) == 0:
+    return jsonify([])
+
+  return jsonify(
+    {
+    "items": [
+      {
+        'id': i + 1,
+        'content': '{} {}'.format(e[2],e[3]),
+        'start': e[4],
+        'group': groups.index("{}.{}".format(e[6],e[7])) + 1,
+      } for i, e in enumerate(events)],
+
+    "groups": [
+      {
+        "id":i+1,
+        "content" : g,
+      } for i, g in enumerate(groups)]
+
+  })
 
 app.run(host="0.0.0.0", port=5000, debug = True)
