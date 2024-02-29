@@ -29,11 +29,13 @@ body, html {
 
 #timelineModal {
   box-sizing: border-box;
-  font-size: 8pt;
-  width: 100%;
-  height: 100%;
+  font-size: 6pt;
 }
 
+#timelineModal .modal-dialog {
+  max-width: 90vw;
+  height: 90vh;
+}
 .action-button{
   float: left;
 }
