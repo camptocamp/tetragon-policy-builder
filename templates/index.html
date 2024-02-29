@@ -84,6 +84,16 @@ Show Timeline
       <div class="modal-body p-0">
         <div id="timelineContainer"></div>
       </div>
+      <div class="modal-footer">
+          <div class="menu">
+            <input type="button" id="zoomInx10" value="Zoom in x10"/>
+            <input type="button" id="zoomIn" value="Zoom in"/>
+              <input type="button" id="zoomOut" value="Zoom out"/>
+              <input type="button" id="zoomOutx10" value="Zoom out x10"/>
+              <input type="button" id="moveLeft" value="Move left"/>
+              <input type="button" id="moveRight" value="Move right"/>
+          </div>
+      </div>
     </div>
   </div>
 </div>
@@ -140,24 +150,46 @@ if (yamlPolicyModal) {
 
 const timelineModal = document.getElementById('timelineModal')
 if (timelineModal) {
+  const timelineContainer = document.getElementById('timelineContainer');
+  var timeline = new vis.Timeline(timelineContainer);
+
   function generateTimeline(data) {
     var options = {
       stack: true,
+      autoResize: true,
       dataAttributes: 'all',
       horizontalScroll: true,
+      zoomable: false,
       margin: {
-        item: 5,
-        axis: 5,
+        item: 1,
+        axis: 1,
       },
       start: new Date(),
-      end: new Date(1000 * 60 * 60 * 24 + new Date().valueOf()),
+      end: new Date(60 * 60 * 12 + new Date().valueOf()),
     };
 
-    const timelineContainer = document.getElementById('timelineContainer');
-    var timeline = new vis.Timeline(timelineContainer, null, options);
-    timeline.setGroups(data.groups)
-    timeline.setItems(data.items)
-    timeline.redraw()
+    timeline.setOptions(options);
+    timeline.setGroups(data.groups);
+    timeline.setItems(data.items);
+    timeline.redraw();
+
+    function move (percentage) {
+      var range = timeline.getWindow();
+      var interval = range.end - range.start;
+
+      timeline.setWindow({
+          start: range.start.valueOf() - interval * percentage,
+          end:   range.end.valueOf()   - interval * percentage
+      });
+  }
+
+    // attach events to the navigation buttons
+    document.getElementById('zoomInx10').onclick   = function () { timeline.zoomIn(0.9); };
+    document.getElementById('zoomIn').onclick    = function () { timeline.zoomIn(0.2); };
+    document.getElementById('zoomOut').onclick   = function () { timeline.zoomOut(0.2); };
+    document.getElementById('zoomOutx10').onclick   = function () { timeline.zoomOut(0.9); };
+    document.getElementById('moveLeft').onclick  = function () { move(1); };
+    document.getElementById('moveRight').onclick = function () { move(-1); };
   }
 
   timelineModal.addEventListener('show.bs.modal', event => {
