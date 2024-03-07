@@ -10,6 +10,10 @@
   <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <script src="{{ url_for('static', filename='jquery-3.7.1.min.js') }}"></script>
   <script src="{{ url_for('static', filename='highlight/highlight.min.js') }}"></script>
+  <!-- note: moment.js must be loaded before vis-timeline-graph2d or the embedded version of moment.js is used -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js"></script>
+  <script type="text/javascript" src="https://unpkg.com/vis-timeline@latest/standalone/umd/vis-timeline-graph2d.min.js"></script>
+  <link href="https://unpkg.com/vis-timeline@latest/styles/vis-timeline-graph2d.min.css" rel="stylesheet" type="text/css" />
   {{ bootstrap.load_css() }}
   {{ moment.include_moment() }}
   {{ moment.locale('fr') }}

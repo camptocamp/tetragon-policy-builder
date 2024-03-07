@@ -1,0 +1,22 @@
+name: tetragon-tetragon-policy-builder
+namespace: tetragon
+container: policy-builder
+image: ghcr.io/camptocamp/tetragon-policy-builder:master
+imagePullPolicy: Always
+command: bash
+persistentVolume:
+  size: 2G
+sync:
+- .:/usr/src
+forward:
+- 5000:5000
+securityContext:
+  runAsUser: 1000
+resources:
+  requests:
+    cpu: 0.2
+    memory: 1G
+  limits:
+    cpu: 2
+    memory: 6G
+
