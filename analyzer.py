@@ -330,27 +330,22 @@ class BackgroundAnalyser(Thread):
       # Extract event type
       eventType = list(e.keys())
       eventType.remove('node_name')
-      eventType.remove('time')
       eventType = eventType[0]
+      time = e["time"]
 
-      # Only use process_exec events
-      if eventType != "process_exec":
+      # Only use process_exec events (?)
+      if eventType not in ("process_exec", "process_exit"):
         return None
 
-      # print("parsing event")
-      # pprint(e)
-
       # Extract metadata
-      ns = e[eventType]["process"]["pod"]["namespace"]
-      pod = e[eventType]["process"]["pod"]["name"]
       bin = e[eventType]["process"]["binary"]
       try:
         args = e[eventType]["process"]["arguments"]
       except KeyError:
         args = ""
-      start = e[eventType]["process"]["start_time"]
+
+      ns = e[eventType]["process"]["pod"]["namespace"]
+      pod = e[eventType]["process"]["pod"]["name"]
       container = e[eventType]["process"]["pod"]["container"]["name"]
 
-
-
-      return (ns, pod, bin, args, start, container)
+      return (ns, pod, bin, args, eventType, time, container)

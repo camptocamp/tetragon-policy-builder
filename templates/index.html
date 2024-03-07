@@ -43,9 +43,9 @@ Show Timeline
       {% for binary in binaries %}
       <li>
         <i class="fa-solid fa-trash-can fs-6 mx-2 image-drop"
-           data-ns="{{ ns }}"
-           data-wl="{{ wl }}"
-           data-binary="{{ binary }}"></i>
+          data-ns="{{ ns }}"
+          data-wl="{{ wl }}"
+          data-binary="{{ binary }}"></i>
         <div class="loader"></div>
         <span class="{{ "" if binary_in_policy is none else "text-success" if binary in binary_in_policy else "text-danger" }}">
         {{ binary }}
@@ -86,12 +86,17 @@ Show Timeline
       </div>
       <div class="modal-footer">
           <div class="menu">
+
             <input type="button" id="zoomInx10" value="Zoom in x10"/>
             <input type="button" id="zoomIn" value="Zoom in"/>
-              <input type="button" id="zoomOut" value="Zoom out"/>
-              <input type="button" id="zoomOutx10" value="Zoom out x10"/>
-              <input type="button" id="moveLeft" value="Move left"/>
-              <input type="button" id="moveRight" value="Move right"/>
+            <input type="button" id="zoomOut" value="Zoom out"/>
+            <input type="button" id="zoomOutx10" value="Zoom out x10"/>
+            <input type="button" id="moveLeft" value="Move left"/>
+            <input type="button" id="moveRight" value="Move right"/>
+            <div>
+              <p>ctrlKey+scroll for Zoom In. Scroll to move laterally.</p>
+            </div>
+
           </div>
       </div>
     </div>
@@ -156,16 +161,18 @@ if (timelineModal) {
   function generateTimeline(data) {
     var options = {
       stack: true,
+      zoomable: true,
+      zoomKey: 'ctrlKey',
       autoResize: true,
       dataAttributes: 'all',
       horizontalScroll: true,
-      zoomable: false,
+      orientation: "top",
       margin: {
         item: 1,
         axis: 1,
       },
-      start: new Date(),
-      end: new Date(60 * 60 * 12 + new Date().valueOf()),
+      start: new Date(  new Date().valueOf() - 60 * 60 * 12 * 10000),
+      end: new Date(),
     };
 
     timeline.setOptions(options);
@@ -177,10 +184,7 @@ if (timelineModal) {
       var range = timeline.getWindow();
       var interval = range.end - range.start;
 
-      timeline.setWindow({
-          start: range.start.valueOf() - interval * percentage,
-          end:   range.end.valueOf()   - interval * percentage
-      });
+
   }
 
     // attach events to the navigation buttons
@@ -211,7 +215,5 @@ if (timelineModal) {
   })
 
 }
-
-
 
 {% endblock %}

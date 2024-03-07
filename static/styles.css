@@ -29,13 +29,26 @@ body, html {
 
 #timelineModal {
   box-sizing: border-box;
-  font-size: 6pt;
+  font-size: 8pt;
 }
 
 #timelineModal .modal-dialog {
   max-width: 90vw;
   height: 90vh;
 }
+
+#timelineModal .vis-item.red {
+  color: white;
+  background-color: red;
+  border-color: darkred;
+}
+
+#timelineModal .vis-item.green {
+  color: black;
+  background-color: green;
+  border-color: darkgreen;
+}
+
 .action-button{
   float: left;
 }
