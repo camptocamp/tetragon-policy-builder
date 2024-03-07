@@ -91,11 +91,13 @@ def get_events(ns):
     return jsonify([])
 
   events = [x for x in analyzers[ns].getEvents() if x is not None]
-  groups = list(set(['{}.{}.{}'.format(e[6],e[1],e[5]) for e in events]))
+  groups = list(set(['{}.{}.{}'.format(e[7],e[1],e[6]) for e in events]))
 
   if len(events) == 0:
     return jsonify([])
 
+  #           0  1    2    3     4          5     6
+  # event = (ns, pod, bin, args, eventType, time, container)
   return jsonify(
     {
     'test': 1,
@@ -103,9 +105,11 @@ def get_events(ns):
       {
         'id': i + 1,
         'content': '{} {}'.format(e[2],e[3]),
-        'start': e[4],
+        'start': e[5],
+        'end': e[5] if e[4] == "process_exit" else "",
         'type': 'point',
-        'group': groups.index('{}.{}.{}'.format(e[6],e[1],e[5])) + 1,
+        'group': groups.index('{}.{}.{}'.format(e[7],e[1],e[6])) + 1,
+        'className': "red" if e[4] == "process_exit" else "green",
       } for i, e in enumerate(events)],
 
     'groups': [
