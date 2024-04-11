@@ -10,7 +10,7 @@ from flask import Flask, render_template, request, url_for, redirect, jsonify
 from flask_bootstrap import Bootstrap5
 from flask_moment import Moment
 from utils import *
-from analyzer import BackgroundAnalyser, BackgroundFlush, BackgroundFetchEvent
+from analyzer import BackgroundAnalyser, BackgroundFlush, BackgroundFetchEvent, NamespaceAnalyser
 
 # Read pod selector to find tetragon pods
 tetragon_pod_selector = os.environ.get('TETRAGON_POD_SELECTOR', 'app.kubernetes.io/instance=tetragon,app.kubernetes.io/name=tetragon')
@@ -27,7 +27,7 @@ Bootstrap5(app)
 Moment(app)
 
 # states
-analyzers = dict()
+analyzers : dict[str, NamespaceAnalyser] = dict()
 events = []
 queue = SimpleQueue()
 
@@ -84,11 +84,27 @@ def remove_policy():
 def get_policy(ns, wl):
   return yaml.dump(analyzers[ns].generatePolicy(wl))
 
-@app.route('/events/<ns>')
-def get_events(ns):
+@app.route('/workloads/<ns>')
+def get_workloads(ns):
+  if not ns in analyzers:
+    raise KeyError("No such namespace")
+
+  return jsonify(analyzers[ns].workloads.keys())
+
+@app.route('/events/<ns>/<wl>')
+def get_events(ns, wl):
 
   if not ns in analyzers:
-    return jsonify([])
+    raise KeyError("No such namespace")
+
+  analyzer : NamespaceAnalyser = analyzers[ns]
+
+  if not wl in analyzer.workloads:
+    raise KeyError("No such workloads")
+
+  res = []
+  for tree in analyzer.workloads[wl].trees:
+     
 
   events = [x for x in analyzers[ns].getEvents() if x is not None]
   groups = list(set(['{}.{}.{}'.format(e[7],e[1],e[6]) for e in events]))
