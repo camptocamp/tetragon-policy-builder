@@ -47,7 +47,7 @@ class NamespaceAnalyser:
   # Namespace
   #   Workload
   #     ExecTree
-  #       Processus  
+  #       Processus
 
 
   def processEvent(self, event : TetragonEvent):
@@ -78,7 +78,7 @@ class NamespaceAnalyser:
       # the event should be the root process of the new tree
       wl.trees.append(ExecTree(event))
       print(self)
-      
+
       #self.events_tail.append(event)
 
   def forgot(self, wl, binary):
@@ -298,7 +298,7 @@ class ExecTree():
 
   def processEvent(self, exec_exit_event: TetragonEvent) -> bool:
     """This method process TetragonEvent.
-    The even 
+    The even
     return true if the process is part of this tree
     """
     # check if this event belong to this tree
@@ -317,7 +317,7 @@ class ExecTree():
 
     # The process was adopted by this exec tree, let's notice caller by returning true
     return True
-  
+
   def getBinaries(self):
     return self.root_command.getBinaries()
 
@@ -325,13 +325,11 @@ class ExecTree():
     return self.root_command.print(4)
 
 class Processus:
-  """Abstracion provides means for processing Process and Process events. 
-  It is built from event calls as observer by Tetragon. 
-  Provides user with cluster wide unique identifier, information binaries executed, start time, finalization time and also hierarchical information of the events (parent/child).  
+  """Abstraction for accessing Kubernetes Workloads' processes data.
+  Process objects are fed with Tetragon events, which are nothing more than Tetragon observations of system calls.
+  Data include cluster-wide unique identifiers, binaries executed, start time, end time and also hierarchical linked information about parent/child dependence.
 
-  Note: Given that process are not mandatory processed in the right order, Processus object can be created by either passing an TetragonEvent of type Exec or Exit.
-  
-  command, arg, start time, end time, childs
+  Note: Given that events may not be received in the right order, Processus objects can be initiated on type Exec or Exit.
   """
 
   def __init__(self, tetragon_event: TetragonEvent) -> None:
@@ -348,7 +346,7 @@ class Processus:
     elif tetragon_event.type == TETRAGON_EVENT_EXIT:
       self.stop_time = tetragon_event.time
       self.exit_event = tetragon_event
-    else: 
+    else:
       raise Exception("Unknown event")
       #raise Exception("Cannot create a process with an exit event")
 
@@ -356,7 +354,7 @@ class Processus:
     self.exec_id = tetragon_event.exec_id
     self.bin = tetragon_event.bin
     self.childs = []
-  
+
   def processEvent(self, tetragon_event: TetragonEvent) -> None:
     if tetragon_event.type == TETRAGON_EVENT_EXEC:
       self.start_time = tetragon_event.time
@@ -366,12 +364,12 @@ class Processus:
       self.exit_event = tetragon_event
       # TODO Check reason of the exit event : sigkill ?
       # self.exit_reason = ...
-    else: 
+    else:
       raise Exception("Unknown event")
 
   def addChildProcessus(self, child) -> None:
     self.childs.append(child)
-    
+
   def findProcessus(self, exec_id):
     if self.exec_id == exec_id:
       return self
@@ -387,7 +385,7 @@ class Processus:
     for child in self.childs:
       bins.extend(child.getBinaries())
     return bins
-  
+
   def print(self, indentation):
     if self.start_time and self.stop_time:
       state = "Completed"
