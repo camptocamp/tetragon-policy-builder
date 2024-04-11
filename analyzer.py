@@ -13,7 +13,7 @@ from threading import Thread, current_thread, Lock
 from tetragon_event import TetragonEvent, TETRAGON_EVENT_EXEC, TETRAGON_EVENT_EXIT
 from utils import *
 
-BUFFER_SIZE = 100
+TIME_30_DAYS = 3600*24*30 # seconds
 
 class NamespaceAnalyser:
 
@@ -216,7 +216,7 @@ class BackgroundFetchEvent(Thread):
   def run(self):
     print("%s manage %s" % (current_thread().name, self.pod.metadata.name), file=sys.stderr)
     v1 = client.CoreV1Api()
-    stream = v1.read_namespaced_pod_log(self.pod.metadata.name, self.pod.metadata.namespace, container="export-stdout", follow=True, _preload_content=False)
+    stream = v1.read_namespaced_pod_log(self.pod.metadata.name, self.pod.metadata.namespace, container="export-stdout", follow=True, _preload_content=False, since_seconds=TIME_30_DAYS)
     while True:
       line = stream.readline()
       if not line:
