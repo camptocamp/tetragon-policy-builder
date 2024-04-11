@@ -39,10 +39,9 @@ class TetragonEvent():
 
   def __eq__(self, other):
     if isinstance(other, TetragonEvent):
-        return self.exec_id == other.exec_id                                                        
+        return self.exec_id == other.exec_id
     else:
         return False
-    
+
   def __str__(self) -> str:
-     return f"{self.exec_id} {self.type} {self.workload_kind}/{self.workload} {self.bin}"
-    
+    return f"{self.exec_id} {self.type} {self.workload_kind}/{self.workload} {self.bin}"

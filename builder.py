@@ -10,7 +10,7 @@ from flask import Flask, render_template, request, url_for, redirect, jsonify
 from flask_bootstrap import Bootstrap5
 from flask_moment import Moment
 from utils import *
-from analyzer import BackgroundAnalyser, BackgroundFlush, BackgroundFetchEvent, NamespaceAnalyser
+from analyzer import BackgroundAnalyser, BackgroundFlush, BackgroundFetchEvent, NamespaceAnalyser, ExecTree
 
 # Read pod selector to find tetragon pods
 tetragon_pod_selector = os.environ.get('TETRAGON_POD_SELECTOR', 'app.kubernetes.io/instance=tetragon,app.kubernetes.io/name=tetragon')
@@ -102,38 +102,20 @@ def get_events(ns, wl):
   if not wl in analyzer.workloads:
     raise KeyError("No such workloads")
 
-  res = []
-  for tree in analyzer.workloads[wl].trees:
-     
+  groups = []
+  items = []
+  for group_id, t in enumerate(analyzer.workloads[wl].trees):
+    groups.append(t.description) # TODO create function?
+    items.extend([ i | { "group": group_id} for i in t.get_json()])
 
-  events = [x for x in analyzers[ns].getEvents() if x is not None]
-  groups = list(set(['{}.{}.{}'.format(e[7],e[1],e[6]) for e in events]))
-
-  if len(events) == 0:
+  if len(items) == 0:
     return jsonify([])
 
-  #           0  1    2    3     4          5     6
-  # event = (ns, pod, bin, args, eventType, time, container)
   return jsonify(
     {
-    'test': 1,
-    'items': [
-      {
-        'id': i + 1,
-        'content': '{} {}'.format(e[2],e[3]),
-        'start': e[5],
-        'end': e[5] if e[4] == "process_exit" else "",
-        'type': 'point',
-        'group': groups.index('{}.{}.{}'.format(e[7],e[1],e[6])) + 1,
-        'className': "red" if e[4] == "process_exit" else "green",
-      } for i, e in enumerate(events)],
-
-    'groups': [
-      {
-        'id':i+1,
-        'content' : g,
-      } for i, g in enumerate(groups)],
-
-  })
+      'items': items,
+      'groups': [{'id':i, 'content':g} for i, g in enumerate(groups)],
+    }
+  )
 
 app.run(host='0.0.0.0', port=5000, debug = True)

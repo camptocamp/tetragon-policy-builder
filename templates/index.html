@@ -7,24 +7,23 @@
 {% for ns, analyser in analyzers.items() %}
 <h1 class="bg-dark text-light p-2">Namespace: {{ ns }}</h1>
 
-<h2 class="mt-4">Timeline: {{ wl }}</h2>
-<div class="container m-2">
-<button type="button" class="btn btn-primary action-button m-2" data-bs-toggle="modal" data-bs-target="#timelineModal"
-data-bs-ns="{{ ns }}" data-bs-wl="{{ wl }}">
-Show Timeline
-</button>
-</div>
-
-
 {% for wl, binaries in analyser.binaries.getDict().items() %}
   {% set binary_in_policy = analyser.getBinariesInPolicy(wl) %}
+
   <h2 class="mt-4">Workload: {{ wl }}</h2>
   <div class="container m-2">
     <div class="clearfix">
+
+      <button type="button" class="btn btn-primary action-button m-2" data-bs-toggle="modal" data-bs-target="#timelineModal"
+      data-bs-ns="{{ ns }}" data-bs-wl="{{ wl }}">
+      Show Timeline
+      </button>
+
       <button type="button" class="btn btn-primary action-button m-2" data-bs-toggle="modal" data-bs-target="#yamlPolicyModal"
               data-bs-ns="{{ ns }}" data-bs-wl="{{ wl }}">
           Show Policy
       </button>
+
       {% set deployed = binary_in_policy is not none %}
       <form method="post" action="{{ url_for('deploy_policy') }}" class="action-button">
         <input type="hidden" name="ns" value="{{ ns }}">
@@ -205,7 +204,7 @@ if (timelineModal) {
 
     $.ajax({
         type: "GET",
-        url: "/events/" + ns,
+        url: "/events/" + ns + "/" + wl,
         success: function (response) {
           generateTimeline(response);
         },
