@@ -9,6 +9,7 @@ from kubernetes.config.config_exception import ConfigException
 from pprint import pprint
 from queue import SimpleQueue, Empty
 from threading import Thread, current_thread, Lock
+from tetragon_event import TetragonEvent, TETRAGON_EVENT_EXEC, TETRAGON_EVENT_EXIT
 from utils import *
 
 BUFFER_SIZE = 100
@@ -17,8 +18,8 @@ class NamespaceAnalyser:
 
   def __init__(self, ns):
     self.ns = ns
-    self.pod_to_workload = dict()
-    self.wl_selector = dict()
+    #self.pod_to_workload = dict()
+    #self.wl_selector = dict()
     self.v1 = client.CoreV1Api()
     self.appsv1 = client.AppsV1Api()
     self.CRApi = client.CustomObjectsApi()
@@ -26,8 +27,9 @@ class NamespaceAnalyser:
     # Populate binaries from configmap
     self._loadBinariesFromCM()
     self.lock = Lock()
-    self.orphanPod = set()
+    #self.orphanPod = set()
     self.events_tail = Buffer(BUFFER_SIZE)
+    self.workloads : dict[str: Workload] = {}
 
   def _loadBinariesFromCM(self):
     try:
@@ -42,110 +44,42 @@ class NamespaceAnalyser:
       else:
         raise e
 
-  def getWorkload(self, pod):
-    if pod in self.pod_to_workload:
-      return self.pod_to_workload[pod]
-    else:
-      if pod in self.orphanPod:
-        raise PodNotfound(pod)
-      owner = self.getPodOwner(pod)
-      if not owner:
-        return "misc"
-      elif owner[0] == 'ReplicaSet':
-        rs_owner = self.getRSOwner(owner[1])
-        self.pod_to_workload[pod] = rs_owner
-        return rs_owner
-      elif owner[0] == 'DaemonSet':
-        self.pod_to_workload[pod] = owner
-        self.wl_selector["%s-%s" % (owner[0], owner[1])] = self.getDaemonSetSelector(owner[1])
-        return owner
-      elif owner[0] == 'StatefulSet':
-        self.pod_to_workload[pod] = owner
-        self.wl_selector["%s-%s" % (owner[0], owner[1])] = self.getStatefulSetSelector(owner[1])
-        return owner
+  # Namespace
+  #   Workload
+  #     ExecTree
+  #       Processus  
+
+
+  def processEvent(self, event : TetragonEvent):
+    with self.lock:
+      # Create or fetch Workload
+      wl_id = f"{event.workload_kind}-{event.workload}"
+      if wl_id not in self.workloads:
+        self.workloads[wl_id] = Workload(event.workload_kind, event.workload)
+      wl = self.workloads[wl_id]
+
+      print(event)
+
+      # Forward event to the workload
+      self.binaries.add(f"{event.workload_kind}-{event.workload}", event.bin)
+      for tree in wl.trees:
+        if tree.processEvent(event):
+          # event was bound to a process tree,
+          # no need to inspect other workloads
+          print(self)
+          return
+      # Seems to be a new process tree:
+      # * entrypoint
+      # * kubectl exec
+      if event.container_pid == 1:
+        print("Entrypoint detected")
       else:
-        raise NotImplemented("getWorkload(%s)" % owner[0])
-
-  def getPodOwner(self, pod):
-    try:
-      api_response = self.v1.read_namespaced_pod(pod, self.ns, pretty=True)
-      #pprint(api_response)
-      owner = api_response.metadata.owner_references[0]
-      return (owner.kind, owner.name)
-    except ApiException as e:
-      if e.reason == 'Not Found':
-        self.orphanPod.add(pod)
-        raise PodNotfound(pod)
-      else:
-        raise e
-    except TypeError as e:
-      print("No owner found for {}".format(api_response.metadata))
-      return (None,"misc")
-      #pprint(api_response)
-
-  def getRSOwner(self, rs):
-    try:
-      api_response = self.appsv1.read_namespaced_replica_set(rs, self.ns, pretty=True)
-      #pprint(api_response)
-      owner = api_response.metadata.owner_references[0]
-      if owner.kind == "Deployment":
-        self.wl_selector["%s-%s" % (owner.kind, owner.name)] = self.getDeploymentSelector(owner.name)
-      else:
-        raise NotImplemented("getRSOwner(%s)" % owner.kind)
-      return (owner.kind, owner.name)
-    except ApiException as e:
-      if e.reason == 'Not Found':
-        raise ReplicasetNotfound(rs)
-      else:
-        raise e
-
-  def getDeploymentSelector(self, deploy):
-    try:
-      api_response = self.appsv1.read_namespaced_deployment(deploy, self.ns, pretty=True)
-      #pprint(api_response)
-      selector = api_response.spec.selector.match_labels
-      return selector
-    except ApiException as e:
-      if e.reason == 'Not Found':
-        raise DeploymentNotfound(deploy)
-      else:
-        raise e
-
-  def getDaemonSetSelector(self, ds):
-    try:
-      api_response = self.appsv1.read_namespaced_daemon_set(ds, self.ns, pretty=True)
-      #pprint(api_response)
-      selector = api_response.spec.selector.match_labels
-      return selector
-    except ApiException as e:
-      if e.reason == 'Not Found':
-        raise DaemonSetNotfound(ds)
-      else:
-        raise e
-
-  def getStatefulSetSelector(self, sts):
-    try:
-      api_response = self.appsv1.read_namespaced_stateful_set(sts, self.ns, pretty=True)
-      #pprint(api_response)
-      selector = api_response.spec.selector.match_labels
-      return selector
-    except ApiException as e:
-      if e.reason == 'Not Found':
-        raise StatefulSetNotfound(sts)
-      else:
-        raise e
-
-  def process(self, event):
-    try:
-      wl = self.getWorkload(event[1])
-      #print("Workload for %s/%s is %s" % (self.ns, event[1], wl))
-
-      with self.lock:
-        self.binaries.add("%s-%s" % (wl[0], wl[1]), event[2])
-        self.events_tail.append(event+(wl[0], wl[1]))
-
-    except PodNotfound as e:
-      print(e)
+        print("User initiated process tree")
+      # the event should be the root process of the new tree
+      wl.trees.append(ExecTree(event))
+      print(self)
+      
+      #self.events_tail.append(event)
 
   def forgot(self, wl, binary):
     if wl in self.binaries.written and binary in self.binaries.written[wl]:
@@ -269,6 +203,13 @@ class NamespaceAnalyser:
         raise e
     return resource['spec']['tracepoints'][0]['selectors'][0]['matchBinaries'][0]['values']
 
+  def __str__(self):
+    title = f"Namespace: {self.ns}"
+    res = title + "\n" + ('-' * len(title)) + "\n"
+    for key, wl in self.workloads.items():
+      res += str(wl) + "\n"
+    return res
+
 
 class BackgroundFetchEvent(Thread):
 
@@ -316,36 +257,146 @@ class BackgroundAnalyser(Thread):
 
       #print("Process one message")
       # Parse event
-      event = self.parseEvent(msg)
-      if event:
-        if event[0] not in self.analyzers:
-          self.analyzers[event[0]] = NamespaceAnalyser(event[0])
-        self.analyzers[event[0]].process(event)
-        if self.analyzers[event[0]].modificationCount() > 10:
-          self.analyzers[event[0]].flush()
-
-  def parseEvent(self, raw_event):
-
-      e = json.loads(raw_event)
-      # Extract event type
-      eventType = list(e.keys())
-      eventType.remove('node_name')
-      eventType = eventType[0]
-      time = e["time"]
-
-      # Only use process_exec events (?)
-      if eventType not in ("process_exec", "process_exit"):
-        return None
-
-      # Extract metadata
-      bin = e[eventType]["process"]["binary"]
       try:
-        args = e[eventType]["process"]["arguments"]
-      except KeyError:
-        args = ""
+        event = TetragonEvent(json.loads(msg))
+        if event.ns not in self.analyzers:
+          self.analyzers[event.ns] = NamespaceAnalyser(event.ns)
+        self.analyzers[event.ns].processEvent(event)
+        if self.analyzers[event.ns].modificationCount() > 10:
+          self.analyzers[event.ns].flush()
+      except Exception as e:
+        pass
 
-      ns = e[eventType]["process"]["pod"]["namespace"]
-      pod = e[eventType]["process"]["pod"]["name"]
-      container = e[eventType]["process"]["pod"]["container"]["name"]
+      # Check if event is part of a user initiated session
 
-      return (ns, pod, bin, args, eventType, time, container)
+
+class Workload():
+    """
+  Hold exec trees of a specific workload and list of binary used
+  """
+
+    def __init__(self, workload_kind, workload) -> None:
+      self.workload = workload
+      self.workload_kind = workload_kind
+      self.trees: list[ExecTree] = []
+
+    def __str__(self):
+      title = f"{self.workload_kind}: {self.workload}"
+      res = "  " + title + "\n  " + ('-' * len(title)) + "\n"
+      for tree in self.trees:
+        res += str(tree) + "\n"
+      return res
+
+
+class ExecTree():
+  """One exec tree per container corresponding to the entrypoint
+  some additional exec tree may be created by user initiated session
+  """
+
+  def __init__(self, first_event: TetragonEvent) -> None:
+    self.root_command : Processus = Processus(first_event)
+
+  def processEvent(self, exec_exit_event: TetragonEvent) -> bool:
+    """This method process TetragonEvent.
+    The even 
+    return true if the process is part of this tree
+    """
+    # check if this event belong to this tree
+    parent : Processus = self.root_command.findProcessus(exec_exit_event.parent_exec_id)
+    if not parent:
+      return False
+
+    # Check if the process is already in the tree
+    process : Processus = self.root_command.findProcessus(exec_exit_event.exec_id)
+    if process:
+        process.processEvent(exec_exit_event)
+    else:
+        parent.addChildProcessus(Processus(exec_exit_event))
+        #print("Process %s/%s  adopted by %s/%s"
+        #        % (exec_exit_event.exec_id, exec_exit_event.bin, self.root_command.exec_id, self.root_command.bin))
+
+    # The process was adopted by this exec tree, let's notice caller by returning true
+    return True
+  
+  def getBinaries(self):
+    return self.root_command.getBinaries()
+
+  def __str__(self):
+    return self.root_command.print(4)
+
+class Processus:
+  """Abstracion provides means for processing Process and Process events. 
+  It is built from event calls as observer by Tetragon. 
+  Provides user with cluster wide unique identifier, information binaries executed, start time, finalization time and also hierarchical information of the events (parent/child).  
+
+  Note: Given that process are not mandatory processed in the right order, Processus object can be created by either passing an TetragonEvent of type Exec or Exit.
+  
+  command, arg, start time, end time, childs
+  """
+
+  def __init__(self, tetragon_event: TetragonEvent) -> None:
+    self.start_time = None
+    self.stop_time = None
+
+    # TODO Should be removed later to reduce memory footprint
+    self.exec_event = None
+    self.exit_event = None
+    # Check type of event
+    if tetragon_event.type == TETRAGON_EVENT_EXEC:
+      self.start_time = tetragon_event.time
+      self.exec_event = tetragon_event
+    elif tetragon_event.type == TETRAGON_EVENT_EXIT:
+      self.stop_time = tetragon_event.time
+      self.exit_event = tetragon_event
+    else: 
+      raise Exception("Unknown event")
+      #raise Exception("Cannot create a process with an exit event")
+
+    # Tetragon identifier
+    self.exec_id = tetragon_event.exec_id
+    self.bin = tetragon_event.bin
+    self.childs = []
+  
+  def processEvent(self, tetragon_event: TetragonEvent) -> None:
+    if tetragon_event.type == TETRAGON_EVENT_EXEC:
+      self.start_time = tetragon_event.time
+      self.exec_event = tetragon_event
+    elif tetragon_event.type == TETRAGON_EVENT_EXIT:
+      self.stop_time = tetragon_event.time
+      self.exit_event = tetragon_event
+      # TODO Check reason of the exit event : sigkill ?
+      # self.exit_reason = ...
+    else: 
+      raise Exception("Unknown event")
+
+  def addChildProcessus(self, child) -> None:
+    self.childs.append(child)
+    
+  def findProcessus(self, exec_id):
+    if self.exec_id == exec_id:
+      return self
+    else:
+      for child in self.childs:
+        p = child.findProcessus(exec_id)
+        if p:
+          return p
+      return None
+
+  def getBinaries(self):
+    bins = [self.exec_event.bin]
+    for child in self.childs:
+      bins.extend(child.getBinaries())
+    return bins
+  
+  def print(self, indentation):
+    if self.start_time and self.stop_time:
+      state = "Completed"
+    elif self.start_time:
+      state = "Running"
+    else:
+      state = "Incoherent"
+
+    res = f"{' ' * indentation}PID: {str(self.exec_event.container_pid)} {str(self.bin)} ({state})\n"
+    for child in self.childs:
+      res += child.print(indentation + 2)
+    return res
