@@ -49,6 +49,24 @@ body, html {
   border-color: darkgreen;
 }
 
+#timelineModal .vis-item.completed {
+  color: black;
+  background-color: green;
+  border-color: darkgreen;
+}
+
+#timelineModal .vis-item.running {
+  color: white;
+  background-color: red;
+  border-color: darkred;
+}
+
+#timelineModal .vis-item.unknown {
+  color: black;
+  background-color: yellow;
+  border-color: yellow;
+}
+
 .action-button{
   float: left;
 }

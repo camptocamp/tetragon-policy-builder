@@ -1,3 +1,4 @@
+from datetime import datetime
 import sys
 import json
 import yaml
@@ -28,7 +29,6 @@ class NamespaceAnalyser:
     self._loadBinariesFromCM()
     self.lock = Lock()
     #self.orphanPod = set()
-    self.events_tail = Buffer(BUFFER_SIZE)
     self.workloads : dict[str: Workload] = {}
 
   def _loadBinariesFromCM(self):
@@ -58,7 +58,7 @@ class NamespaceAnalyser:
         self.workloads[wl_id] = Workload(event.workload_kind, event.workload)
       wl = self.workloads[wl_id]
 
-      print(event)
+      #print(event)
 
       # Forward event to the workload
       self.binaries.add(f"{event.workload_kind}-{event.workload}", event.bin)
@@ -79,7 +79,6 @@ class NamespaceAnalyser:
       wl.trees.append(ExecTree(event))
       print(self)
 
-      #self.events_tail.append(event)
 
   def forgot(self, wl, binary):
     if wl in self.binaries.written and binary in self.binaries.written[wl]:
@@ -143,10 +142,6 @@ class NamespaceAnalyser:
       }
       #pprint(manifest)
       return manifest
-
-  def getEvents(self):
-    return self.events_tail.get()
-
 
   def deployPolicy(self, wl):
     self.CRApi.create_namespaced_custom_object(
@@ -295,6 +290,7 @@ class ExecTree():
 
   def __init__(self, first_event: TetragonEvent) -> None:
     self.root_command : Processus = Processus(first_event)
+    self.description = f"{first_event.workload_kind}-{first_event.workload}-{first_event.container}-{"entrypoint" if self.is_entrypoint() else "exec"}"
 
   def processEvent(self, exec_exit_event: TetragonEvent) -> bool:
     """This method process TetragonEvent.
@@ -317,6 +313,14 @@ class ExecTree():
 
     # The process was adopted by this exec tree, let's notice caller by returning true
     return True
+
+  def is_entrypoint(self):
+    """True if entrypoint of container, else  -e.g. kubectl exec initiated process-- it will return false
+    """
+    return str(self.root_command.container_pid) == "1"
+
+  def get_json(self):
+    return self.root_command.get_json()
 
   def getBinaries(self):
     return self.root_command.getBinaries()
@@ -352,8 +356,18 @@ class Processus:
 
     # Tetragon identifier
     self.exec_id = tetragon_event.exec_id
+    self.container_pid = tetragon_event.container_pid
     self.bin = tetragon_event.bin
+    self.args = tetragon_event.args
     self.childs = []
+
+  def _get_state(self):
+    if self.start_time and self.stop_time:
+      return "completed"
+    elif self.start_time:
+      return "running"
+    else:
+      return "incoherent"
 
   def processEvent(self, tetragon_event: TetragonEvent) -> None:
     if tetragon_event.type == TETRAGON_EVENT_EXEC:
@@ -386,14 +400,22 @@ class Processus:
       bins.extend(child.getBinaries())
     return bins
 
-  def print(self, indentation):
-    if self.start_time and self.stop_time:
-      state = "Completed"
-    elif self.start_time:
-      state = "Running"
-    else:
-      state = "Incoherent"
+  def get_json(self):
+    res=[self.as_json()]
+    for child in self.childs:
+      res.extend(child.get_json())
+    return res
 
+  def as_json(self):
+    return {
+      'content': f"{self.bin} {self.args}",
+      'start': self.start_time if self.start_time else "",
+      'end': self.stop_time if self.stop_time else datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+      'className': self._get_state(),
+    }
+
+  def print(self, indentation):
+    state = self._get_state().upper()
     res = f"{' ' * indentation}PID: {str(self.exec_event.container_pid)} {str(self.bin)} ({state})\n"
     for child in self.childs:
       res += child.print(indentation + 2)
