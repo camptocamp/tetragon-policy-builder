@@ -291,7 +291,7 @@ class ExecTree():
 
   def __init__(self, first_event: TetragonEvent) -> None:
     self.root_command : Processus = Processus(first_event)
-    self.description = f"{first_event.workload_kind}-{first_event.workload}-{first_event.container}-{"entrypoint" if self.is_entrypoint() else "exec"}"
+    self.description = f"{first_event.workload_kind}-{first_event.workload}-{first_event.container}-{'entrypoint' if self.is_entrypoint() else 'exec'}"
 
   def processEvent(self, exec_exit_event: TetragonEvent) -> bool:
     """This method process TetragonEvent.
@@ -417,7 +417,11 @@ class Processus:
 
   def print(self, indentation):
     state = self._get_state().upper()
-    res = f"{' ' * indentation}PID: {str(self.exec_event.container_pid)} {str(self.bin)} ({state})\n"
+    if self.exec_event:
+      container_pid = self.exec_event.container_pid
+    else:
+      container_pid = self.exit_event.container_pid
+    res = f"{' ' * indentation}PID: {str(container_pid)} {str(self.bin)} ({state})\n"
     for child in self.childs:
       res += child.print(indentation + 2)
     return res
