@@ -14,6 +14,7 @@ from tetragon_event import TetragonEvent, TETRAGON_EVENT_EXEC, TETRAGON_EVENT_EX
 from utils import *
 
 TIME_30_DAYS = 3600*24*30 # seconds
+TIME_3_DAYS = 3600*24*3 # seconds
 
 class NamespaceAnalyser:
 
@@ -216,7 +217,7 @@ class BackgroundFetchEvent(Thread):
   def run(self):
     print("%s manage %s" % (current_thread().name, self.pod.metadata.name), file=sys.stderr)
     v1 = client.CoreV1Api()
-    stream = v1.read_namespaced_pod_log(self.pod.metadata.name, self.pod.metadata.namespace, container="export-stdout", follow=True, _preload_content=False, since_seconds=TIME_30_DAYS)
+    stream = v1.read_namespaced_pod_log(self.pod.metadata.name, self.pod.metadata.namespace, container="export-stdout", follow=True, _preload_content=False, since_seconds=TIME_3_DAYS)
     while True:
       line = stream.readline()
       if not line:
@@ -266,21 +267,21 @@ class BackgroundAnalyser(Thread):
 
 
 class Workload():
-    """
+  """
   Hold exec trees of a specific workload and list of binary used
   """
 
-    def __init__(self, workload_kind, workload) -> None:
-      self.workload = workload
-      self.workload_kind = workload_kind
-      self.trees: list[ExecTree] = []
+  def __init__(self, workload_kind, workload) -> None:
+    self.workload = workload
+    self.workload_kind = workload_kind
+    self.trees: list[ExecTree] = []
 
-    def __str__(self):
-      title = f"{self.workload_kind}: {self.workload}"
-      res = "  " + title + "\n  " + ('-' * len(title)) + "\n"
-      for tree in self.trees:
-        res += str(tree) + "\n"
-      return res
+  def __str__(self):
+    title = f"{self.workload_kind}: {self.workload}"
+    res = "  " + title + "\n  " + ('-' * len(title)) + "\n"
+    for tree in self.trees:
+      res += str(tree) + "\n"
+    return res
 
 
 class ExecTree():
