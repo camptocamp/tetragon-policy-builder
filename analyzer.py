@@ -124,7 +124,7 @@ class NamespaceAnalyser:
         },
         "spec": {
           "podSelector": {
-            "matchLabels" : self.wl_selector[wl]
+            "matchLabels" : self.workloads[wl].getSelector()
           },
           "tracepoints": [
             {
@@ -284,6 +284,34 @@ class Workload():
       res += str(tree) + "\n"
     return res
 
+  def getSelector(self):
+    v1 = client.CoreV1Api()
+    appV1 = client.AppsV1Api()
+    try:
+      if self.workload_kind == "deployment":
+        api_response = self.appsv1.read_namespaced_deployment(deploy, self.ns, pretty=True)
+      elif self.workload_kind == "daemonset":
+        api_response = self.appsv1.read_namespaced_daemon_set(ds, self.ns, pretty=True)
+      elif self.workload_kind == "statefulset":
+        api_response = self.appsv1.read_namespaced_stateful_set(sts, self.ns, pretty=True)
+      else:
+          raise Exception(f"Unknown workload kind : {self.workload_kind}")
+    except ApiException as e:
+      if e.reason == 'Not Found':
+        raise WorkloadNotfound(self.workload_kind, self.workload)
+      else:
+        raise e
+    selector = api_response.spec.selector.match_labels
+    return selector
+
+class WorkloadNotfound(Exception):
+
+  def __init__(self, kind, name):
+    self.kind = kind
+    self.name = name
+
+  def __str__(self):
+    return f"{self.kind} not Found: {self.name}"
 
 class ExecTree():
   """One exec tree per container corresponding to the entrypoint
