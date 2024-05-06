@@ -15,16 +15,18 @@ class Buffer:
     return self.data
 
 class BufferedDictSet():
+  """Dictionary of Set with a modification Buffer
+  to be able to make batch modifications.
 
-  # Dictionary of Set with a modification Buffer
-  # to be able to make batch modifications.
-  #
-  # d = BufferedDictSet()
-  # d.add("a", 2)
-  # d.add("b", 3) 2 pending modifications
-  # d.add("a", 3) 3 pending modifications
-  # write_to_disk(d.getDict()) --> {"a": {2, 3}, "b": {3}}
-  # d.flush() no more pending modifications
+  d = BufferedDictSet()
+  d.add("a", 2)
+  d.add("b", 3) 2 pending modifications
+  d.add("a", 3) 3 pending modifications
+  write_to_disk(d.getDict()) --> {"a": {2, 3}, "b": {3}}
+  d.flush() no more pending modifications
+
+  """
+
 
   def __init__(self):
     self.written = dict()
