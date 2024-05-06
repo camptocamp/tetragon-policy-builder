@@ -7,7 +7,8 @@
 {% for ns, analyser in analyzers.items() %}
 <h1 class="bg-dark text-light p-2">Namespace: {{ ns }}</h1>
 
-{% for wl, binaries in analyser.binaries.getDict().items() %}
+{% for wl in analyser.workloads.keys() %}
+  {% set binaries = analyser.getBinaries(wl) %}
   {% set binary_in_policy = analyser.getBinariesInPolicy(wl) %}
 
   <h2 class="mt-4">Workload: {{ wl }}</h2>
@@ -123,6 +124,7 @@
           },
           error: function (error) {
               console.error("Error:", error);
+              alert("Error removing binary");
           }
       });
   });
@@ -147,6 +149,7 @@ if (yamlPolicyModal) {
         },
         error: function (error) {
             console.error("Error:", error);
+            alert("Error fetching policy manifest");
         }
     });
   })
