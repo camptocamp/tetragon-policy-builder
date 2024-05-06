@@ -10,7 +10,7 @@ from kubernetes.config.config_exception import ConfigException
 from pprint import pprint
 from queue import SimpleQueue, Empty
 from threading import Thread, current_thread, Lock
-from tetragon_event import TetragonEvent, TETRAGON_EVENT_EXEC, TETRAGON_EVENT_EXIT
+from tetragon import TetragonEvent, TETRAGON_EVENT_EXEC, TETRAGON_EVENT_EXIT
 from utils import *
 
 TIME_30_DAYS = 3600*24*30 # seconds
@@ -18,6 +18,14 @@ TIME_10_DAYS = 3600*24*10 # seconds
 TIME_3_DAYS = 3600*24*3 # seconds
 
 class NamespaceAnalyser:
+  """Every ns runs an analyser that will process Tetragon events.
+
+    -> Namespace
+      -> Workload
+        -> ExecTree
+          -> Processus
+
+  """
 
   def __init__(self, ns):
     self.ns = ns
@@ -46,24 +54,16 @@ class NamespaceAnalyser:
       else:
         raise e
 
-  # Namespace
-  #   Workload
-  #     ExecTree
-  #       Processus
-
-
   def processEvent(self, event : TetragonEvent):
     with self.lock:
       # Create or fetch Workload
       wl_id = f"{event.workload_kind}-{event.workload}"
       if wl_id not in self.workloads:
-        self.workloads[wl_id] = Workload(event.workload_kind, event.workload)
+        self.workloads[wl_id] = Workload(self.ns, event.workload_kind, event.workload)
       wl = self.workloads[wl_id]
 
-      #print(event)
-
       # Forward event to the workload
-      self.binaries.add(f"{event.workload_kind}-{event.workload}", event.bin)
+      self.binaries.add(wl_id, event.bin)
       for tree in wl.trees:
         if tree.processEvent(event):
           # event was bound to a process tree,
@@ -134,7 +134,7 @@ class NamespaceAnalyser:
               "selectors": [
                 {
                   "matchArgs": [ { "index": 4, "operator": "Equal", "values": ["59", "322"] } ],
-                  "matchBinaries": [ { "operator": "NotIn", "values": list(self.binaries.getDict()[wl]) } ],
+                  "matchBinaries": [ { "operator": "NotIn", "values": self.getBinaries(wl) } ],
                   "matchActions": [ { "action": "Sigkill" } ]
                 }
               ]
@@ -183,6 +183,9 @@ class NamespaceAnalyser:
       else:
         raise e
     return True
+
+  def getBinaries(self, wl):
+    return list(self.binaries.getDict()[wl])
 
   def getBinariesInPolicy(self, wl):
     try:
@@ -272,7 +275,8 @@ class Workload():
   Hold exec trees of a specific workload and list of binary used
   """
 
-  def __init__(self, workload_kind, workload) -> None:
+  def __init__(self, ns, workload_kind, workload) -> None:
+    self.ns = ns
     self.workload = workload
     self.workload_kind = workload_kind
     self.trees: list[ExecTree] = []
@@ -285,15 +289,14 @@ class Workload():
     return res
 
   def getSelector(self):
-    v1 = client.CoreV1Api()
     appV1 = client.AppsV1Api()
     try:
-      if self.workload_kind == "deployment":
-        api_response = self.appsv1.read_namespaced_deployment(deploy, self.ns, pretty=True)
-      elif self.workload_kind == "daemonset":
-        api_response = self.appsv1.read_namespaced_daemon_set(ds, self.ns, pretty=True)
-      elif self.workload_kind == "statefulset":
-        api_response = self.appsv1.read_namespaced_stateful_set(sts, self.ns, pretty=True)
+      if self.workload_kind.lower() == "deployment":
+        api_response = appV1.read_namespaced_deployment(self.workload, self.ns)
+      elif self.workload_kind.lower() == "daemonset":
+        api_response = appV1.read_namespaced_daemon_set(self.workload, self.ns)
+      elif self.workload_kind.lower() == "statefulset":
+        api_response = appV1.read_namespaced_stateful_set(self.workload, self.ns)
       else:
           raise Exception(f"Unknown workload kind : {self.workload_kind}")
     except ApiException as e:
